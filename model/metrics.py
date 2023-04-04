@@ -26,5 +26,5 @@ def top_rated_percent_for_py_func(y_true, y_pred):
 
     return top_rated_percent(y_true_np, y_pred_np)
 
-def top_rated_percent_for_train(y_true, y_pred):
+def accuracy(y_true, y_pred):
     return tf.py_function(top_rated_percent_for_py_func, [y_true, y_pred], tf.float32)
