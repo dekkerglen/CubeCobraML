@@ -5,9 +5,7 @@ import numpy as np
 import json
 import os
 import os.path
-import random
-import sys
-import pdb
+from metrics import top_rated_percent
 
 data_dir = '../data/'
 model_dir = './model/'
@@ -29,14 +27,12 @@ with open(os.path.join(data_dir, 'oracleFrequency.json')) as f:
 
 print('Creating Data Generator...\n')
 
-
-
 generator = DataGenerator(
     cubes,
     decks,
     # picks,
     card_freqs,
-    batch_size=1,
+    batch_size=64,
 )
 
 print('Loading Model...\n')
@@ -49,8 +45,11 @@ print('Predicting...\n')
 
 x, y = generator.__getitem__(0)
 
-results = model.predict(x)
+pred1, pred2 = model.predict(x)
 
 print('Done.\n')
 
-print(results)
+print('Cubes Accuracy: ', top_rated_percent(y[0], pred1))
+print('Decks Accuracy: ', top_rated_percent(y[1], pred2))
+
+exit()
