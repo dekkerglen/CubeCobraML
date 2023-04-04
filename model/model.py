@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.models import Model, Sequential
+import os
 
 class Encoder(Model):
     def __init__(self,name):
@@ -16,6 +17,7 @@ class Encoder(Model):
         return self.model(x)
     
     def save_weights(self, filename):
+        print('Saving weights to ' + filename)
         self.model.save_weights(filename)
 
     def load_weights(self, filename):
@@ -36,10 +38,12 @@ class Decoder(Model):
         return self.model(x)
     
     def save_weights(self, filename):
+        print('Saving weights to ' + filename)
         self.model.save_weights(filename)
 
     def load_weights(self, filename):
         self.model.load_weights(filename)
+        
 class CubeCobraMLSystem(Model):
     def __init__(self, num_cards):
         super().__init__()
@@ -75,14 +79,14 @@ class CubeCobraMLSystem(Model):
     #     return best_pick_from_pack
 
     def save_weights(self, filename):
-        self.encoder.save_weights(filename + "_encoder")
-        self.cube_decoder.save_weights(filename + "_cube_decoder")
-        # self.draft_decoder.save_weights(filename + "_draft_decoder")
-        self.deck_build_decoder.save_weights(filename + "_deck_build_decoder")
+        self.encoder.save_weights(os.path.join(filename, "encoder", 'model'))
+        self.cube_decoder.save_weights(os.path.join(filename, "cube_decoder", 'model'))
+        # self.draft_decoder.save_weights(os.path.join((filename, "_draft_decoder"))
+        self.deck_build_decoder.save_weights(os.path.join(filename, "deck_build_decoder", 'model'))
 
     def load_weights(self, filename):
-        self.encoder.load_weights(filename + "_encoder")
-        self.cube_decoder.load_weights(filename + "_cube_decoder")
-        # self.draft_decoder.load_weights(filename + "_draft_decoder")
-        self.deck_build_decoder.load_weights(filename + "_deck_build_decoder")
+        self.encoder.load_weights(os.path.join(filename, "encoder", 'model'))
+        self.cube_decoder.load_weights(os.path.join(filename, "cube_decoder", 'model'))
+        # self.draft_decoder.load_weights(os.path.join(filename, "_draft_decoder"))
+        self.deck_build_decoder.load_weights(os.path.join(filename, "deck_build_decoder", 'model'))
         

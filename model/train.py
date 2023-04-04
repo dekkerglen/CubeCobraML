@@ -9,6 +9,13 @@ import random
 import sys
 import pdb
 
+# get params
+params = sys.argv[1:]
+
+epochs = int(params[0])
+batch_size = int(params[1])
+continue_training = params[2]
+
 def reset_random_seeds(seed):
     # currently not used
     os.environ['PYTHONHASHSEED'] = str(seed)
@@ -39,6 +46,7 @@ generator = DataGenerator(
     decks,
     # picks,
     card_freqs,
+    batch_size=batch_size,
 )
 
 print('Creating Model...\n')
@@ -52,14 +60,17 @@ model.compile(
     metrics='accuracy'
 )
 
+if continue_training == 'true':
+    print('Loading Model...\n')
+    model.load_weights(model_dir)
+
 print('Training Model...\n')
 
 model.fit(
     generator,
-    epochs=1,
+    epochs=epochs,
     verbose=1,
 )
 
-dest = os.path.join(model_dir, 'model')
-print('Saving Model to {}...\n'.format(dest))
-model.save_weights(dest)
+print('Saving Model to {}...\n'.format(model_dir))
+model.save_weights(model_dir)

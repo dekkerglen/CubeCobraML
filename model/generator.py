@@ -8,12 +8,12 @@ class DataGenerator(Sequence):
         decks,
         # picks,
         card_freqs,
-        num_batches=1000,
+        batch_size=128,
         noise=0.2,
         noise_std=0.1,
     ):
         super().__init__()
-        self.num_batches = num_batches
+        self.batch_size = batch_size
         self.noise = noise
         self.noise_std = noise_std
         self.num_cards = len(card_freqs)
@@ -22,10 +22,6 @@ class DataGenerator(Sequence):
         self.x_cubes = np.array(cubes)
         self.x_decks = np.array(decks, dtype=object)
         # self.x_picks = np.array(picks, dtype=object)
-
-        self.cube_batch_size = len(self.x_cubes) // self.num_batches
-        self.deck_batch_size = len(self.x_decks) // self.num_batches
-        # self.pick_batch_size = len(self.x_picks) // self.num_batches
         
         self.cube_indices = np.arange(len(self.x_cubes))
         self.deck_indices = np.arange(len(self.x_decks))
@@ -34,12 +30,12 @@ class DataGenerator(Sequence):
         self.shuffle_indeces()
         
     def __len__(self):
-        return self.num_batches
+        return min(len(self.x_cubes), len(self.x_decks)) // self.batch_size
 
     def __getitem__(self, batch_number):
-        X_cubes, y_cubes = self.generate_cubes(self.cube_indices[batch_number * self.cube_batch_size:(batch_number + 1) * self.cube_batch_size], self.cube_batch_size)
-        X_decks, y_decks = self.generate_decks(self.deck_indices[batch_number * self.deck_batch_size:(batch_number + 1) * self.deck_batch_size], self.deck_batch_size)
-        # X_picks, y_picks = self.generate_picks(self.pick_indices[batch_number * self.pick_batch_size:(batch_number + 1) * self.pick_batch_size], self.pick_batch_size)
+        X_cubes, y_cubes = self.generate_cubes(self.cube_indices[batch_number * self.batch_size:(batch_number + 1) * self.batch_size], self.batch_size)
+        X_decks, y_decks = self.generate_decks(self.deck_indices[batch_number * self.batch_size:(batch_number + 1) * self.batch_size], self.batch_size)
+        # X_picks, y_picks = self.generate_picks(self.pick_indices[batch_number * self.batch_size:(batch_number + 1) * self.batch_size], self.batch_size)
         
         return [[X_cubes, X_decks], [y_cubes, y_decks]]
         
