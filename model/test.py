@@ -9,45 +9,48 @@ import random
 import sys
 import pdb
 
-def reset_random_seeds(seed):
-    # currently not used
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    tf.random.set_seed(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-
 data_dir = '../data/'
+model_dir = './model/'
 
 print('Loading Data...\n')
 
 # open json files
 with open(os.path.join(data_dir, 'cubes.json')) as f:
     cubes = json.load(f)
-print('cubes loaded')
 with open(os.path.join(data_dir, 'decks.json')) as f:
     decks = json.load(f)
-print('decks loaded')
 with open(os.path.join(data_dir, 'picks.json')) as f:
     picks = json.load(f)
-print('picks loaded')
 with open(os.path.join(data_dir, 'oracleFrequency.json')) as f:
     card_freqs = json.load(f)
-print('card_freqs loaded')
+    
+with open(os.path.join(data_dir, 'oracleFrequency.json')) as f:
+    card_freqs = json.load(f)
 
 print('Creating Data Generator...\n')
+
 
 
 generator = DataGenerator(
     cubes,
     decks,
-    picks,
+    # picks,
     card_freqs,
+    batch_size=1,
 )
 
-x,y = generator.generate_picks(np.array([1]))
-x1, x2 = x
+print('Loading Model...\n')
 
-def decode_vector(vector):
-    return [i for i, x in enumerate(vector) if x == 1]
+model = CubeCobraMLSystem(len(card_freqs))
 
-print(decode_vector(x1[0]), decode_vector(x2[0]),  decode_vector(y[0]))
+model.load_weights(model_dir)
+
+print('Predicting...\n')
+
+x, y = generator.__getitem__(0)
+
+results = model.predict(x)
+
+print('Done.\n')
+
+print(results)
