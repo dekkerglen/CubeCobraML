@@ -19,12 +19,3 @@ def top_rated_percent(y_true, y_pred):
         accuracies.append(accuracy)
 
     return np.mean(accuracies)
-
-def top_rated_percent_for_py_func(y_true, y_pred):
-    y_true_np = y_true.numpy()
-    y_pred_np = y_pred.numpy()
-
-    return top_rated_percent(y_true_np, y_pred_np)
-
-def accuracy(y_true, y_pred):
-    return tf.py_function(top_rated_percent_for_py_func, [y_true, y_pred], tf.float32)

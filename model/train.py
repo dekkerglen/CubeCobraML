@@ -7,7 +7,6 @@ import os
 import os.path
 import random
 import sys
-from metrics import accuracy
 
 # get params
 params = sys.argv[1:]
@@ -57,7 +56,7 @@ model.compile(
     optimizer='adam',
     loss=['binary_crossentropy','binary_crossentropy','binary_crossentropy'],
     loss_weights=[1.0,1.0,1.0],
-    metrics=accuracy
+    metrics='accuracy'
 )
 
 if continue_training == 'true':
