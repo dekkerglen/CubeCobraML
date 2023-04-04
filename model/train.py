@@ -17,14 +17,7 @@ def reset_random_seeds(seed):
     random.seed(seed)
 
 data_dir = '../data/'
-
-num_gpus = len(tf.config.list_physical_devices('GPU'))
-
-print("Num GPUs Available:", num_gpus)
-
-if num_gpus <= 0:
-    print('No GPUs found. Exiting...')
-    sys.exit(1)
+model_dir = './model/'
 
 print('Loading Data...\n')
 
@@ -67,6 +60,6 @@ model.fit(
     verbose=1,
 )
 
-dest = os.path.join(data_dir, 'model.h5')
+dest = os.path.join(model_dir, 'model')
 print('Saving Model to {}...\n'.format(dest))
-model.save(dest)
+model.save_weights(dest)

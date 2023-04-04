@@ -1,35 +1,45 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Dense
-from tensorflow.keras.models import Model
+from tensorflow.keras.models import Model, Sequential
 
 class Encoder(Model):
     def __init__(self,name):
         super().__init__()
-        self.encoded_1 = Dense(512, activation='relu', name=name + "_e1")
-        self.encoded_2 = Dense(256, activation='relu', name=name + "_e2")
-        self.encoded_3 = Dense(128, activation='relu', name=name + "_e3")
-        self.bottleneck = Dense(64, activation='relu', name=name + "_bottleneck")
+        self.model = Sequential([
+            Dense(512, activation='relu', name=name + "_e1"),
+            Dense(256, activation='relu', name=name + "_e2"),
+            Dense(128, activation='relu', name=name + "_e3"),
+            Dense(64, activation='relu', name=name + "_bottleneck")
+        ])
     
     def call(self, x):
-        encoded = self.encoded_1(x)
-        encoded = self.encoded_2(encoded)
-        encoded = self.encoded_3(encoded)
-        return self.bottleneck(encoded)
+        return self.model(x)
+    
+    def save_weights(self, filename):
+        self.model.save_weights(filename)
+
+    def load_weights(self, filename):
+        self.model.load_weights(filename)
     
 class Decoder(Model):
     def __init__(self, name, output_dim, output_act):
         super().__init__()
-        self.decoded_1 = Dense(128, activation='relu', name=name + "_d1")
-        self.decoded_2 = Dense(256, activation='relu', name=name + "_d2")
-        self.decoded_3 = Dense(512, activation='relu', name=name + "_d3")
-        self.reconstruct = Dense(output_dim, activation=output_act, name=name + "_reconstruction")
+
+        self.model = Sequential([
+            Dense(128, activation='relu', name=name + "_d1"),
+            Dense(256, activation='relu', name=name + "_d2"),
+            Dense(512, activation='relu', name=name + "_d3"),
+            Dense(output_dim, activation=output_act, name=name + "_reconstruction")
+        ])
     
     def call(self, x):
-        decoded = self.decoded_1(x)
-        decoded = self.decoded_2(decoded)
-        decoded = self.decoded_3(decoded)
-        return self.reconstruct(decoded)
+        return self.model(x)
+    
+    def save_weights(self, filename):
+        self.model.save_weights(filename)
 
+    def load_weights(self, filename):
+        self.model.load_weights(filename)
 class CubeCobraMLSystem(Model):
     def __init__(self, num_cards):
         super().__init__()
@@ -62,3 +72,16 @@ class CubeCobraMLSystem(Model):
         best_possible_picks = self.draft_decoder(embedding, training=training)
         best_pick_from_pack = best_possible_picks * packs
         return best_pick_from_pack
+
+    def save_weights(self, filename):
+        self.encoder.save_weights(filename + "_encoder")
+        self.cube_decoder.save_weights(filename + "_cube_decoder")
+        self.draft_decoder.save_weights(filename + "_draft_decoder")
+        self.deck_build_decoder.save_weights(filename + "_deck_build_decoder")
+
+    def load_weights(self, filename):
+        self.encoder.load_weights(filename + "_encoder")
+        self.cube_decoder.load_weights(filename + "_cube_decoder")
+        self.draft_decoder.load_weights(filename + "_draft_decoder")
+        self.deck_build_decoder.load_weights(filename + "_deck_build_decoder")
+        

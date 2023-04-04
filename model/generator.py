@@ -8,12 +8,12 @@ class DataGenerator(Sequence):
         decks,
         picks,
         card_freqs,
-        batch_size=64,
+        num_batches=1000,
         noise=0.2,
         noise_std=0.1,
     ):
         super().__init__()
-        self.batch_size = batch_size
+        self.num_batches = num_batches
         self.noise = noise
         self.noise_std = noise_std
         self.num_cards = len(card_freqs)
@@ -22,6 +22,10 @@ class DataGenerator(Sequence):
         self.x_cubes = np.array(cubes)
         self.x_decks = np.array(decks, dtype=object)
         self.x_picks = np.array(picks, dtype=object)
+
+        self.cube_batch_size = len(self.x_cubes) // self.num_batches
+        self.deck_batch_size = len(self.x_decks) // self.num_batches
+        self.pick_batch_size = len(self.x_picks) // self.num_batches
         
         self.cube_indices = np.arange(len(self.x_cubes))
         self.deck_indices = np.arange(len(self.x_decks))
@@ -30,12 +34,13 @@ class DataGenerator(Sequence):
         self.shuffle_indeces()
         
     def __len__(self):
-        return min(len(self.x_cubes), len(self.x_decks), len(self.x_picks)) // self.batch_size
+        return 1
+#        return self.num_batches
 
     def __getitem__(self, batch_number):
-        X_cubes, y_cubes = self.generate_cubes(self.cube_indices[batch_number * self.batch_size:(batch_number + 1) * self.batch_size])
-        X_decks, y_decks = self.generate_decks(self.deck_indices[batch_number * self.batch_size:(batch_number + 1) * self.batch_size])
-        X_picks, y_picks = self.generate_picks(self.pick_indices[batch_number * self.batch_size:(batch_number + 1) * self.batch_size])
+        X_cubes, y_cubes = self.generate_cubes(self.cube_indices[batch_number * self.cube_batch_size:(batch_number + 1) * self.cube_batch_size], self.cube_batch_size)
+        X_decks, y_decks = self.generate_decks(self.deck_indices[batch_number * self.deck_batch_size:(batch_number + 1) * self.deck_batch_size], self.deck_batch_size)
+        X_picks, y_picks = self.generate_picks(self.pick_indices[batch_number * self.pick_batch_size:(batch_number + 1) * self.pick_batch_size], self.pick_batch_size)
         
         return [[X_cubes, X_decks, X_picks], [y_cubes, y_decks, y_picks]]
         
@@ -47,18 +52,18 @@ class DataGenerator(Sequence):
     def on_epoch_end(self):
         self.shuffle_indeces()
 
-    def to_vector_encoding(self,indices):
-        vec = np.zeros((self.batch_size,self.num_cards))
+    def to_vector_encoding(self, indices, batch_size):
+        vec = np.zeros((batch_size,self.num_cards))
         for i,index in enumerate(indices):
             vec[i,index] = 1
         return vec
 
-    def generate_cubes(self, main_indices):
-        cubes = self.to_vector_encoding(self.x_cubes[main_indices])
+    def generate_cubes(self, main_indices, batch_size):
+        cubes = self.to_vector_encoding(self.x_cubes[main_indices], batch_size)
 
-        cut_mask = np.zeros((self.batch_size,self.num_cards))
-        add_mask = np.zeros((self.batch_size,self.num_cards))
-        y_cut_mask = np.zeros((self.batch_size,self.num_cards))
+        cut_mask = np.zeros((batch_size,self.num_cards))
+        add_mask = np.zeros((batch_size,self.num_cards))
+        y_cut_mask = np.zeros((batch_size,self.num_cards))
 
         for i,cube in enumerate(cubes):
             includes = np.where(cube == 1)[0]
@@ -87,15 +92,15 @@ class DataGenerator(Sequence):
         return [x_cubes, y_cubes]
     
     
-    def encode_deck(self, mainboards):
-        vec = np.zeros((self.batch_size,self.num_cards))
+    def encode_deck(self, mainboards, batch_size):
+        vec = np.zeros((batch_size,self.num_cards))
         for i,mainboard in enumerate(mainboards):
             for index in mainboard:
                 vec[i,index] = 1
         return vec
     
-    def encode_pool(self, mainboards, sideboards):       
-        vec = np.zeros((self.batch_size,self.num_cards))
+    def encode_pool(self, mainboards, sideboards, batch_size):       
+        vec = np.zeros((batch_size, self.num_cards))
         for i,mainboard in enumerate(mainboards):
             for index in mainboard:
                 vec[i,index] = 1
@@ -104,28 +109,28 @@ class DataGenerator(Sequence):
                 vec[i,index] = 1
         return vec
 
-
     # decks have mainboard, sideboard, basics
-    def generate_decks(self, main_indices):
+    def generate_decks(self, main_indices, batch_size):
         decks = self.x_decks[main_indices]
 
         mainboards = np.array(list(map(lambda x: x['mainboard'], decks)))
         sideboards = np.array(list(map(lambda x: x['sideboard'], decks)))
 
-        x = self.encode_pool(mainboards, sideboards)
-        y = self.encode_deck(mainboards)
+        x = self.encode_pool(mainboards, sideboards, batch_size)
+        y = self.encode_deck(mainboards, batch_size)
 
         return [x, y]
     
-    def generate_picks(self,main_indices):
+    def generate_picks(self,main_indices, batch_size):
         picks = self.x_picks[main_indices]
         
         pools = np.array(list(map(lambda x: x['pool'], picks)))
         packs = np.array(list(map(lambda x: x['pack'], picks)))
         picks = np.array(list(map(lambda x: x['pick'], picks)))
 
-        x_pool = self.to_vector_encoding(pools)
-        x_pack = self.to_vector_encoding(packs)
-        y_pick = self.to_vector_encoding(picks)
+        x_pool = self.to_vector_encoding(pools, batch_size)
+        x_pack = self.to_vector_encoding(packs, batch_size)
+        y_pick = self.to_vector_encoding(picks, batch_size)
 
         return [[x_pool, x_pack], y_pick]
+

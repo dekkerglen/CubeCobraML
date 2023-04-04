@@ -65,8 +65,8 @@ const processDecks = (numOracles) => {
     decks.push(...JSON.parse(fs.readFileSync(`${sourceDir}/decks/${deckFiles[i]}`, 'utf8'))
       .filter((deck) => deck.mainboard.length > 0 || deck.sideboard.length > 0)
       .map((deck) => ({
-        mainboard: deck.mainboard.filter((card) => (deck.basics || []).includes(card)),
-        sideboard: deck.sideboard.filter((card) => (deck.basics || []).includes(card)),
+        mainboard: deck.mainboard.filter((card) => !(deck.basics || []).includes(card)),
+        sideboard: deck.sideboard.filter((card) => !(deck.basics || []).includes(card)),
       })));
   }
 
@@ -83,25 +83,38 @@ const processPicks =  (numOracles) => {
   const pickFiles = fs.readdirSync(`${sourceDir}/picks`);
 
   console.log(`\tLoaded ${pickFiles.length} pick files.`);
+  console.log("\tWriting picks to file...");
 
-  const result = [];
+  
+  const fd = fs.openSync(`${destDir}/picks.json`, 'w');
+  fs.writeSync(fd, '[');
 
   for (let i = 0; i < pickFiles.length; i++) {
-    result.push(...JSON.parse(fs.readFileSync(`${sourceDir}/picks/${pickFiles[i]}`, 'utf8'))
-      .filter((pick) => pick.pack.length > 1)
+    const picks = JSON.parse(fs.readFileSync(`${sourceDir}/picks/${pickFiles[i]}`, 'utf8'))
+      .filter((pick) => pick.pack.length > 3 && pick.pool.length > 3 && pick.pack.includes(pick.picked))
       .map((pick) => ({
         pool: pick.pool.filter((card) => card !== pick.picked),
         pick: pick.picked,
         pack: pick.pack,
-      })));
+      }));
+
+    const serialized = JSON.stringify(picks);
+      
+    // trim the brackets
+    fs.writeSync(fd, serialized.substring(1, serialized.length - 1));
+
+    if (i < pickFiles.length - 1) {
+      fs.writeSync(fd, ',');
+    }
       
     console.log(`\t\tProcessed ${i} / ${pickFiles.length}`);
   }
 
-  console.log("\tWriting picks to file...");
-  writeFile(`${destDir}/picks.json`, result);
+  fs.writeSync(fd, ']');
+  fs.closeSync(fd);
+  
 
-  console.log(`\tDone processing ${result.length} picks.`);
+  console.log(`\tDone processing ${pickFiles.length} pick files.`);
 }
 
 const processOracleDict = () => {
