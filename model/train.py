@@ -67,6 +67,13 @@ if continue_training == 'true':
 
 print('Training Model...\n')
 
+x, y = generator.__getitem__(0)
+
+pred1, pred2 = model.predict(x)
+
+print('Untrained cubes accuracy: ', top_rated_percent(y[0], pred1))
+print('Untrained decks accuracy: ', top_rated_percent(y[1], pred2))
+
 model.fit(
     generator,
     epochs=epochs,
@@ -81,9 +88,6 @@ reconstructed = CubeCobraMLSystem(len(card_freqs))
 reconstructed.load_weights(model_dir)
 
 
-x, y = generator.__getitem__(0)
-
-pred1, pred2 = model.predict(x)
 
 print('Done.\n')
 
