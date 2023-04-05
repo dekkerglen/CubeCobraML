@@ -89,10 +89,12 @@ reconstructed.load_weights(model_dir)
 
 print('Done.\n')
 
+pred1, pred2 = model.predict(x)
+
 print('Trained cubes accuracy: ', top_rated_percent(y[0], pred1))
 print('Trained decks accuracy: ', top_rated_percent(y[1], pred2))
 
-pre3, pre4 = reconstructed.predict(x)
+pred1, pred2 = model.predict(x)
 
-print('Reconstructed cubes accuracy: ', top_rated_percent(y[0], pre3))
-print('Reconstructed decks accuracy: ', top_rated_percent(y[1], pre4))
+print('Reconstructed cubes accuracy: ', top_rated_percent(y[0], pre1))
+print('Reconstructed decks accuracy: ', top_rated_percent(y[1], pre2))
