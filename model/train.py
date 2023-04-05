@@ -76,18 +76,18 @@ print('Untrained decks accuracy: ', top_rated_percent(y[1], pred2))
 
 model.fit(
     generator,
-    epochs=epochs,
-    verbose=1,
+    epochs=epochs
 )
 
 print('Saving Model to {}...\n'.format(model_dir))
-model.save_weights(model_dir)
-model.save_json(model_dir)
+model.save(model_dir, save_format='tf')
+# model.save_weights(model_dir)
+# model.save_json(model_dir)
 
-reconstructed = CubeCobraMLSystem(len(card_freqs))
-reconstructed.load_weights(model_dir)
+# reconstructed = CubeCobraMLSystem(len(card_freqs))
+# reconstructed.load_weights(model_dir)
 
-
+reconstructed = tensorflow.keras.models.load_model(model_dir)
 
 print('Done.\n')
 
