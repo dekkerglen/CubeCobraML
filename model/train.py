@@ -80,14 +80,12 @@ model.fit(
 )
 
 print('Saving Model to {}...\n'.format(model_dir))
-model.save(model_dir, save_format='tf')
-# model.save_weights(model_dir)
-# model.save_json(model_dir)
+model.save_weights(model_dir)
+model.save_json(model_dir)
 
-# reconstructed = CubeCobraMLSystem(len(card_freqs))
-# reconstructed.load_weights(model_dir)
+reconstructed = CubeCobraMLSystem(len(card_freqs))
+reconstructed.load_weights(model_dir)
 
-reconstructed = tf.keras.models.load_model(model_dir)
 
 print('Done.\n')
 
