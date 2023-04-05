@@ -83,18 +83,9 @@ print('Saving Model to {}...\n'.format(model_dir))
 model.save_weights(model_dir)
 model.save_json(model_dir)
 
-reconstructed = CubeCobraMLSystem(len(card_freqs))
-reconstructed.load_weights(model_dir)
-
-
 print('Done.\n')
 
 pred1, pred2 = model.predict(x)
 
 print('Trained cubes accuracy: ', top_rated_percent(y[0], pred1))
 print('Trained decks accuracy: ', top_rated_percent(y[1], pred2))
-
-pred1, pred2 = model.predict(x)
-
-print('Reconstructed cubes accuracy: ', top_rated_percent(y[0], pred1))
-print('Reconstructed decks accuracy: ', top_rated_percent(y[1], pred2))
