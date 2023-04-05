@@ -6,6 +6,7 @@ import json
 import os
 import os.path
 from metrics import top_rated_percent
+import tensorflowjs as tfjs
 
 data_dir = '../data/test/'
 model_dir = './model/'
@@ -23,5 +24,8 @@ model = CubeCobraMLSystem(len(card_freqs))
 model.load_weights(model_dir)
 
 print('Converting...\n')
+
+
+tfjs.converters.save_keras_model(model, "tfjsmodel")
 
 exit()
