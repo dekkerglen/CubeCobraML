@@ -14,6 +14,7 @@ params = sys.argv[1:]
 epochs = int(params[0])
 batch_size = int(params[1])
 continue_training = params[2]
+loss_weights = int(params[3])
 
 def reset_random_seeds(seed):
     # currently not used
@@ -55,7 +56,7 @@ model = CubeCobraMLSystem(len(card_freqs))
 model.compile(
     optimizer='adam',
     loss=['binary_crossentropy','binary_crossentropy','binary_crossentropy'],
-    loss_weights=[1.0,1.0,1.0],
+    loss_weights=0.5,
     metrics='accuracy'
 )
 
@@ -73,3 +74,4 @@ model.fit(
 
 print('Saving Model to {}...\n'.format(model_dir))
 model.save_weights(model_dir)
+model.save_json(model_dir)
