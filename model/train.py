@@ -14,7 +14,7 @@ params = sys.argv[1:]
 epochs = int(params[0])
 batch_size = int(params[1])
 continue_training = params[2]
-loss_weights = int(params[3])
+loss_weights = float(params[3])
 
 def reset_random_seeds(seed):
     # currently not used
