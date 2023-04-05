@@ -2,6 +2,7 @@ import tensorflow as tf
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.models import Model, Sequential
 import tensorflowjs as tfjs
+from tensorflow import keras
 
 import os
 
@@ -20,10 +21,10 @@ class Encoder(Model):
     
     def save_weights(self, filename):
         print('Saving weights to ' + filename)
-        self.model.save_weights(filename)
+        self.model.save(filename)
 
     def load_weights(self, filename):
-        self.model.load_weights(filename)
+        self.model = keras.models.load_model(filename)
 
     def save_json(self, filename):
         tfjs.converters.save_keras_model(self.model, filename)
@@ -44,10 +45,10 @@ class Decoder(Model):
     
     def save_weights(self, filename):
         print('Saving weights to ' + filename)
-        self.model.save_weights(filename)
+        self.model.save(filename)
 
     def load_weights(self, filename):
-        self.model.load_weights(filename)
+        self.model = keras.models.load_model(filename)
         
     def save_json(self, filename):
         tfjs.converters.save_keras_model(self.model, filename)
