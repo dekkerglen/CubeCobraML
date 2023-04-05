@@ -7,7 +7,7 @@ import os
 import os.path
 from metrics import top_rated_percent
 
-data_dir = '../data/'
+data_dir = '../data/test/'
 model_dir = './model/'
 
 print('Loading Data...\n')

@@ -1,7 +1,10 @@
 const fs = require('fs');
 
 const sourceDir = 'raw_data';
-const destDir = 'data';
+const trainDir = 'data/train';
+const testDir = 'data/test';
+
+const TEST_PERCENT = 0.1;
 
 
 function writeFile(filepath, data) {
@@ -45,8 +48,10 @@ const processCubes = (numOracles) => {
 
   console.log(`\tLoaded ${cubes.length} cubes.`);
 
-  fs.writeFileSync(`${destDir}/cubes.json`, JSON.stringify(cubes));
-  fs.writeFileSync(`${destDir}/oracleFrequency.json`, JSON.stringify(oracleFrequency));
+  fs.writeFileSync(`${trainDir}/cubes.json`, JSON.stringify(cubes.slice(0, Math.floor(cubes.length * (1-TEST_PERCENT)))));
+  fs.writeFileSync(`${testDir}/cubes.json`, JSON.stringify(cubes.slice(Math.floor(cubes.length * (1-TEST_PERCENT)))));
+  fs.writeFileSync(`${trainDir}/oracleFrequency.json`, JSON.stringify(oracleFrequency));
+  fs.writeFileSync(`${testDir}/oracleFrequency.json`, JSON.stringify(oracleFrequency));
   
   console.log('\tDone processing cubes.');
 }
@@ -70,7 +75,8 @@ const processDecks = (numOracles) => {
       })));
   }
 
-  fs.writeFileSync(`${destDir}/decks.json`, JSON.stringify(decks));
+  fs.writeFileSync(`${trainDir}/decks.json`, JSON.stringify(decks.slice(0, Math.floor(decks.length * (1-TEST_PERCENT)))));
+  fs.writeFileSync(`${testDir}/decks.json`, JSON.stringify(decks.slice(Math.floor(decks.length * (1-TEST_PERCENT)))));
 
   console.log(`\tDone processing ${decks.length} decks.`);
 
@@ -86,8 +92,13 @@ const processPicks =  (numOracles) => {
   console.log("\tWriting picks to file...");
 
   
-  const fd = fs.openSync(`${destDir}/picks.json`, 'w');
-  fs.writeSync(fd, '[');
+  const trainFile = fs.openSync(`${trainDir}/picks.json`, 'w');
+  const testFile = fs.openSync(`${testDir}/picks.json`, 'w');
+  fs.writeSync(trainFile, '[');
+  fs.writeSync(testFile, '[');
+
+  let wroteTrain = false;
+  let wroteTest = false;
 
   for (let i = 0; i < pickFiles.length; i++) {
     const picks = JSON.parse(fs.readFileSync(`${sourceDir}/picks/${pickFiles[i]}`, 'utf8'))
@@ -100,18 +111,30 @@ const processPicks =  (numOracles) => {
 
     const serialized = JSON.stringify(picks);
       
-    // trim the brackets
-    fs.writeSync(fd, serialized.substring(1, serialized.length - 1));
+    if (i / pickFiles.length > TEST_PERCENT) {
+      if (wroteTest) {
+        fs.writeSync(trainFile, ',');
+      } else {
+        wroteTest = true;
+      }
+      fs.writeSync(trainFile, serialized.substring(1, serialized.length - 1));
 
-    if (i < pickFiles.length - 1) {
-      fs.writeSync(fd, ',');
+    } else {
+      if (wroteTrain) {
+        fs.writeSync(testFile, ',');
+      } else {
+        wroteTrain = true;
+      }
+      fs.writeSync(testFile, serialized.substring(1, serialized.length - 1));
     }
-      
+    
     console.log(`\t\tProcessed ${i} / ${pickFiles.length}`);
   }
 
-  fs.writeSync(fd, ']');
-  fs.closeSync(fd);
+  fs.writeSync(trainFile, ']');
+  fs.writeSync(testFile, ']');
+  fs.closeSync(trainFile);
+  fs.closeSync(testFile);
   
 
   console.log(`\tDone processing ${pickFiles.length} pick files.`);
@@ -119,14 +142,15 @@ const processPicks =  (numOracles) => {
 
 const processOracleDict = () => {
   const indexToOracle = Object.values(JSON.parse(fs.readFileSync(`${sourceDir}/indexToOracleMap.json`, 'utf8')));
-  fs.writeFileSync(`${destDir}/oracleDict.json`, JSON.stringify(indexToOracle));
+  fs.writeFileSync(`${trainDir}/oracleDict.json`, JSON.stringify(indexToOracle));
+  fs.writeFileSync(`${testDir}/oracleDict.json`, JSON.stringify(indexToOracle));
 
   return indexToOracle.length;
 }
 
 const run =  () => {  
-  if (!fs.existsSync(destDir)) {
-    fs.mkdirSync(destDir);
+  if (!fs.existsSync(trainDir)) {
+    fs.mkdirSync(trainDir);
   }
 
   const numOracles = processOracleDict();

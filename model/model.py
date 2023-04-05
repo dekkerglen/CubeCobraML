@@ -1,6 +1,8 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.models import Model, Sequential
+import tensorflowjs as tfjs
+
 import os
 
 class Encoder(Model):
@@ -22,6 +24,9 @@ class Encoder(Model):
 
     def load_weights(self, filename):
         self.model.load_weights(filename)
+
+    def save_json(self, filename):
+        tfjs.converters.save_keras_model(self.model, filename)
     
 class Decoder(Model):
     def __init__(self, name, output_dim, output_act):
@@ -43,6 +48,9 @@ class Decoder(Model):
 
     def load_weights(self, filename):
         self.model.load_weights(filename)
+        
+    def save_json(self, filename):
+        tfjs.converters.save_keras_model(self.model, filename)
         
 class CubeCobraMLSystem(Model):
     def __init__(self, num_cards):
@@ -90,3 +98,8 @@ class CubeCobraMLSystem(Model):
         # self.draft_decoder.load_weights(os.path.join(filename, "_draft_decoder"))
         self.deck_build_decoder.load_weights(os.path.join(filename, "deck_build_decoder", 'model'))
         
+    def save_json(self, filename):
+        self.encoder.save_json(os.path.join(filename, "encoder_js", 'model'))
+        self.cube_decoder.save_json(os.path.join(filename, "cube_decoder_js", 'model'))
+        # self.draft_decoder.save_json(os.path.join(filename, "_draft_decoder"))
+        self.deck_build_decoder.save_json(os.path.join(filename, "deck_build_decoder_js", 'model'))

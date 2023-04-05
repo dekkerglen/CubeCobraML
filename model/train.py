@@ -22,7 +22,7 @@ def reset_random_seeds(seed):
     np.random.seed(seed)
     random.seed(seed)
 
-data_dir = '../data/'
+data_dir = '../data/train/'
 model_dir = './model/'
 
 print('Loading Data...\n')
