@@ -7,6 +7,7 @@ import os
 import os.path
 import random
 import sys
+from metrics import top_rated_percent
 
 # get params
 params = sys.argv[1:]
@@ -75,3 +76,21 @@ model.fit(
 print('Saving Model to {}...\n'.format(model_dir))
 model.save_weights(model_dir)
 model.save_json(model_dir)
+
+reconstructed = CubeCobraMLSystem(len(card_freqs))
+reconstructed.load_weights(model_dir)
+
+
+x, y = generator.__getitem__(0)
+
+pred1, pred2 = model.predict(x)
+
+print('Done.\n')
+
+print('Trained cubes accuracy: ', top_rated_percent(y[0], pred1))
+print('Trained decks accuracy: ', top_rated_percent(y[1], pred2))
+
+pre3, pre4 = reconstructed.predict(x)
+
+print('Reconstructed cubes accuracy: ', top_rated_percent(y[0], pre3))
+print('Reconstructed decks accuracy: ', top_rated_percent(y[1], pre4))
