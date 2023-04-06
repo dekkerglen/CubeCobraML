@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Row, Col, Button } from 'reactstrap';
+import { Row, Col, Button, Card, CardBody } from 'reactstrap';
 import CardItem from './CardItem';
 
 function RecommendPage() {
@@ -59,10 +59,26 @@ function RecommendPage() {
         </Row>
       </Col>
       <Col xs="6">
-        <h4>Recommended Adds</h4>
-        </Col>
+        <h4>Recommended Adds</h4>        
+          {adds.map((card, index) => (
+            <Card key={`${card.name}-${index}`} className="mb-2">
+              <CardBody>
+                <img src={card.image} alt={card.name} />
+                {' '}{index+1}. {card.name} - {card.rating}
+              </CardBody>
+            </Card>
+          ))}
+      </Col>
       <Col xs="6">
         <h4>Recommended Removes</h4>
+          {removes.map((card, index) => (
+            <Card key={`${card.name}-${index}`} className="mb-2">
+              <CardBody>
+                <img src={card.image} alt={card.name} />
+                {' '}{index+1}. {card.name} - {card.rating}
+              </CardBody>
+            </Card>
+          ))}
       </Col>
     </Row>
     </>

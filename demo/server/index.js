@@ -42,11 +42,11 @@ app.post("/api/recommend", (req, res) => {
 
   res.json({
     adds: recommendations.adds.map((card) => ({
-      ...cardDict(card.oracle),
+      ...cardDict[card.oracle],
       rating: card.rating
     })),
     removes: recommendations.removes.map((card) => ({
-      ...cardDict(card.oracle),
+      ...cardDict[card.oracle],
       rating: card.rating
     }))
   });
