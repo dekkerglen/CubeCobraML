@@ -45,11 +45,11 @@ class Decoder(Model):
     
     def save_weights(self, filename):
         print('Saving weights to ' + filename)
-        self.model.save_weights(filename)
+        self.model.save(filename)
 
     def load_weights(self, filename):
         print('Loading weights from ' + filename)
-        self.model.load_weights(filename)
+        self.model = keras.models.load_model(filename)
         
     # def save_json(self, filename):
     #     tfjs.converters.save_keras_model(self.model, filename)
