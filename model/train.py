@@ -5,7 +5,6 @@ import numpy as np
 import json
 import os
 import os.path
-import random
 import sys
 from metrics import top_rated_percent, relative_pick
 
@@ -31,6 +30,9 @@ with open(os.path.join(data_dir, 'picks.json')) as f:
     picks = json.load(f)
 with open(os.path.join(data_dir, 'oracleFrequency.json')) as f:
     card_freqs = json.load(f)
+    
+with open(os.path.join(data_dir, 'elos.json')) as f:
+    elos = json.load(f)
 
 print('Creating Data Generator...\n')
 
@@ -45,7 +47,7 @@ generator = DataGenerator(
 
 print('Creating Model...\n')
 
-model = CubeCobraMLSystem(len(card_freqs))
+model = CubeCobraMLSystem(len(card_freqs), elos)
 
 model.compile(
     optimizer='adam',

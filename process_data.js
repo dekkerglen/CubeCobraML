@@ -145,6 +145,25 @@ const processOracleDict = () => {
   fs.writeFileSync(`${trainDir}/oracleDict.json`, JSON.stringify(indexToOracle));
   fs.writeFileSync(`${testDir}/oracleDict.json`, JSON.stringify(indexToOracle));
 
+  const simpleCardDict = JSON.parse(fs.readFileSync(`${sourceDir}/simpleCardDict.json`, 'utf8'));
+
+  const elos = [];
+
+  for (let i = 0; i < indexToOracle.length; i++) {
+    const elo = simpleCardDict[indexToOracle[i]].elo || 1200;
+    elos.push(Math.log(elo / 600));
+  }
+
+  // normalize elos
+  const maxElo = Math.max(...elos);
+
+  for (let i = 0; i < elos.length; i++) {
+    elos[i] = elos[i] / maxElo;
+  }
+
+  fs.writeFileSync(`${testDir}/elos.json`, JSON.stringify(elos));
+  fs.writeFileSync(`${trainDir}/elos.json`, JSON.stringify(elos));
+
   return indexToOracle.length;
 }
 

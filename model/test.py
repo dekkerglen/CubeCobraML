@@ -24,6 +24,10 @@ with open(os.path.join(data_dir, 'oracleFrequency.json')) as f:
     
 with open(os.path.join(data_dir, 'oracleFrequency.json')) as f:
     card_freqs = json.load(f)
+    
+with open(os.path.join(data_dir, 'elos.json')) as f:
+    elos = json.load(f)
+    
 
 print('Creating Data Generator...\n')
 
@@ -37,7 +41,7 @@ generator = DataGenerator(
 
 print('Loading Model...\n')
 
-model = CubeCobraMLSystem(len(card_freqs))
+model = CubeCobraMLSystem(len(card_freqs), elos)
 
 model.load_weights(model_dir)
 
