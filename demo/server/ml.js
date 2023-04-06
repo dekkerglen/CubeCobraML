@@ -7,7 +7,7 @@ const oracleToIndex = Object.fromEntries(
 );
 
 const numOracles = Object.keys(oracleToIndex).length;
-console.log(numOracles);
+const elos = JSON.parse(fs.readFileSync("elos.json"));
 
 let encoder;
 let recommend_decoder;
@@ -42,6 +42,9 @@ tf.loadGraphModel('file://../../model/tfjs_model/draft_decoder/model.json').then
   console.log(err);
 });
 
+const sigmoid = (x) => {
+  return 1 / (1 + Math.exp(-x));
+}
 
 const encodeIndeces = (indeces) => {
   const tensor = new Array(numOracles).fill(0);
@@ -123,7 +126,6 @@ const deckbuild = (oracles) => {
   const mainboard = sorted.slice(0, 24);
   const sideboard = sorted.slice(24, oracles.length).reverse();
 
-
   return {
     mainboard,
     sideboard
@@ -138,6 +140,10 @@ const draft = (pack, pool) => {
   const recommendations = draft_decoder.predict([encoded]);
 
   const array = recommendations.dataSync();
+
+  for (let i = 0; i < numOracles; i++) {
+    array[i] = sigmoid(elos[indexToOracle[i]] * array[i]);
+  }
 
   const res = [];
 
