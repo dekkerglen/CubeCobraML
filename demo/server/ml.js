@@ -122,9 +122,38 @@ const deckbuild = (oracles) => {
   }
 }
 
+const draft = (pack, pool) => {
+  const vector = [encodeIndeces(pool.map(oracle => oracleToIndex[oracle]))]; 
+  const tensor = tf.tensor(vector);
+
+  const encoded = encoder.predict(tensor);
+  const recommendations = deckbuilder_decoder.predict([encoded]);
+
+  const array = recommendations.dataSync();
+
+  const res = [];
+
+  for (let i = 0; i < numOracles; i++) {
+    const oracle = indexToOracle[i];
+    if (pack.includes(oracle)) {
+      res.push({
+        oracle: indexToOracle[i],
+        rating: array[i]
+      });
+    }
+  }
+  
+  console.log(res);
+
+  return res.sort((a, b) => b.rating - a.rating);
+}
+
+
+
   
 
 module.exports = {
   recommend,
-  deckbuild
+  deckbuild,
+  draft
 }

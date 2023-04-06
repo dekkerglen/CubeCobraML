@@ -4,7 +4,8 @@ import CardItem from './CardItem';
 
 
 function DraftPage() {
-  const [cards, setCards] = useState('');
+  const [packText, setPackText] = useState('');
+  const [poolText, setPoolText] = useState('');
   const [pack, setPack] = useState([]);
   const [pool, setPool] = useState([]);
   const [picks, setPicks] = useState([]);
@@ -15,7 +16,7 @@ function DraftPage() {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ cards: cards.split('\n') }),
+      body: JSON.stringify({ cards: packText.split('\n') }),
     });
     const json = await response.json();    
 
@@ -26,50 +27,85 @@ function DraftPage() {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ cards: cards.split('\n') }),
+      body: JSON.stringify({ cards: poolText.split('\n') }),
     });
-    const json2 = await response.json();    
+    const json2 = await response2.json();    
 
-    setPack(json2.cards);
+    setPool(json2.cards);
 
-    const response3 = await fetch('/api/deckbuild', {
+    const response3 = await fetch('/api/draft', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ cards: json.cards.map(card => card.name) }),
+      body: JSON.stringify({ 
+        pack: json.cards.map(card => card.name),
+        pool: json2.cards.map(card => card.name) 
+      }),
     });
 
     const json3 = await response3.json();
 
+    console.log(json3.picks);
+
     setPicks(json3.picks);
-  }, [cards]);
+  }, [packText, poolText]);
   
 
   return (
     <>
-    <Row>
-      <Col xs="6">
-    <h3>Pack</h3>
-        <textarea
-          className="form-control"
-          rows="10"
-          value={cards}
-          onChange={e => setCards(e.target.value)}
-        />
-      </Col>      
-      <Col xs="6">
-    <h3>Pack</h3>
-        <textarea
-          className="form-control"
-          rows="10"
-          value={cards}
-          onChange={e => setCards(e.target.value)}
-        />
-      </Col>
-      <Button block outline color="primary" className="mt-2" onClick={fetchPicks}>Fetch</Button>
-  
-    </Row>
+      <Row>
+        <Col xs="6">
+          <h3>Pack</h3>
+          <textarea
+            className="form-control"
+            rows="10"
+            value={packText}
+            onChange={e => setPackText(e.target.value)}
+          />
+        </Col>      
+        <Col xs="6">
+          <h3>Pool</h3>
+          <textarea
+            className="form-control"
+            rows="10"
+            value={poolText}
+            onChange={e => setPoolText(e.target.value)}
+          />
+        </Col>
+        <Button block outline color="primary" className="my-2" onClick={fetchPicks}>Fetch</Button>
+        <Col style={{ maxHeight:400, overflowY:'scroll' }} xs="6">
+          <Row>
+            {pack.map((card, index) => (
+              <Col key={`${card.name}-${index}`} xs="3">
+                <CardItem card={card} />
+              </Col>
+            ))}
+          </Row>
+        </Col>
+        <Col style={{ maxHeight:400, overflowY:'scroll' }} xs="6">
+          <Row>
+            {pool.map((card, index) => (
+              <Col key={`${card.name}-${index}`} xs="3">
+                <CardItem card={card} />
+              </Col>
+            ))}
+          </Row>
+        </Col>
+        <Col className="mt-2" xs="12">
+        <h4>Recommended Picks</h4>
+          <Row>
+            {picks.map((card, index) => (
+            <Card key={`${card.name}-${index}`} className="mb-2">
+              <CardBody>
+                <img src={card.image} alt={card.name} />
+                {' '}{index+1}. {card.name} - {Math.round(card.rating * 10000) / 100}%
+              </CardBody>
+            </Card>
+            ))}
+          </Row>
+        </Col>
+      </Row>
     </>
   );
 }

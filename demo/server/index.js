@@ -71,6 +71,23 @@ app.post("/api/deckbuild", (req, res) => {
   });
 });
 
+app.post("/api/draft", (req, res) => {
+  const { pack, pool } = req.body;
+
+  const packOracles = pack.filter(card => card.toLowerCase() in oracleByName).map(card => oracleByName[card.toLowerCase()]);
+  const poolOracles = pool.filter(card => card.toLowerCase() in oracleByName).map(card => oracleByName[card.toLowerCase()]);
+
+  const recommendations = ml.draft(packOracles, poolOracles);
+
+  res.json({
+    picks: recommendations.map((card) => ({
+      ...cardDict[card.oracle],
+      rating: card.rating
+    }))
+  });
+});
+
+
 app.listen(PORT, () => {
   console.log(`Server listening on ${PORT}`);
 });

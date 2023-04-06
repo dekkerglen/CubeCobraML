@@ -17,13 +17,6 @@ batch_size = int(params[1])
 continue_training = params[2]
 loss_weights = float(params[3])
 
-def reset_random_seeds(seed):
-    # currently not used
-    os.environ['PYTHONHASHSEED'] = str(seed)
-    tf.random.set_seed(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-
 data_dir = '../data/train/'
 model_dir = './model/'
 
@@ -34,8 +27,8 @@ with open(os.path.join(data_dir, 'cubes.json')) as f:
     cubes = json.load(f)
 with open(os.path.join(data_dir, 'decks.json')) as f:
     decks = json.load(f)
-# with open(os.path.join(data_dir, 'picks.json')) as f:
-#     picks = json.load(f)
+with open(os.path.join(data_dir, 'picks.json')) as f:
+    picks = json.load(f)
 with open(os.path.join(data_dir, 'oracleFrequency.json')) as f:
     card_freqs = json.load(f)
 
@@ -45,7 +38,7 @@ print('Creating Data Generator...\n')
 generator = DataGenerator(
     cubes,
     decks,
-    # picks,
+    picks,
     card_freqs,
     batch_size=batch_size,
 )
@@ -56,8 +49,8 @@ model = CubeCobraMLSystem(len(card_freqs))
 
 model.compile(
     optimizer='adam',
-    loss=['binary_crossentropy','binary_crossentropy','binary_crossentropy'],
-    loss_weights=0.5,
+    loss='binary_crossentropy',
+    loss_weights=loss_weights,
     metrics='accuracy'
 )
 
@@ -69,7 +62,7 @@ print('Training Model...\n')
 
 x, y = generator.__getitem__(0)
 
-pred1, pred2 = model.predict(x)
+pred1, pred2, pred3 = model.predict(x)
 
 print('Untrained cubes accuracy: ', top_rated_percent(y[0], pred1))
 print('Untrained decks accuracy: ', top_rated_percent(y[1], pred2))
@@ -84,7 +77,7 @@ model.save_weights(model_dir)
 
 print('Done.\n')
 
-pred1, pred2 = model.predict(x)
+pred1, pred2, pred3 = model.predict(x)
 
 print('Trained cubes accuracy: ', top_rated_percent(y[0], pred1))
 print('Trained decks accuracy: ', top_rated_percent(y[1], pred2))
