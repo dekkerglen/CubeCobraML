@@ -72,15 +72,11 @@ class CubeCobraMLSystem(Model):
 
     def recommend(self, cubes, training=None):
         embedding = self.encoder(cubes, training=training)
-        card_rankings = self.cube_decoder(embedding, training=training)
-        viable_recommendations = tf.math.abs(cubes - 1)
-        return card_rankings * viable_recommendations
+        return self.cube_decoder(embedding, training=training)
     
     def deck_build(self, pools, training=None):
         embedding = self.encoder(pools, training=training)
-        card_rankings = self.deck_build_decoder(embedding, training=training)
-        viable_recommendations = tf.math.abs(pools - 1)
-        return card_rankings * viable_recommendations
+        return self.deck_build_decoder(embedding, training=training)
 
     # def draft(self, packs, pools, training=None):
     #     embedding = self.encoder(pools, training=training)
