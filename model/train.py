@@ -53,7 +53,7 @@ model.compile(
     optimizer='adam',
     loss=['binary_crossentropy','binary_crossentropy', 'categorical_crossentropy'],
     loss_weights=[loss_weights, loss_weights, loss_weights],
-    metrics=['accuracy']
+    metrics={'output_1': 'accuracy', 'output_2': 'accuracy', 'output_3': 'top_k_categorical_accuracy'}
 )
 # top_k_categorical_accuracy
 

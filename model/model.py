@@ -57,7 +57,7 @@ class CubeCobraMLSystem(Model):
         super().__init__()
         self.encoder = Encoder('encoder')
         self.cube_decoder = Decoder('recommend', num_cards, tf.nn.sigmoid)
-        self.draft_decoder = Decoder('draft', num_cards, 'relu')
+        self.draft_decoder = Decoder('draft', num_cards, tf.nn.sigmoid)
         self.deck_build_decoder = Decoder('deck_build', num_cards, tf.nn.sigmoid)
         self.elos = elos
 
@@ -80,7 +80,9 @@ class CubeCobraMLSystem(Model):
     def draft(self, packs, pools, training=None):
         embedding = self.encoder(pools, training=training)
         best_possible_picks = self.draft_decoder(embedding, training=training)
-        return tf.nn.sigmoid(best_possible_picks * self.elos) * packs
+        mask = (1-packs)
+        return tf.nn.softmax(best_possible_picks * self.elos - mask)
+        # return best_possible_picks * self.elos - packs
 
     def save_weights(self, filename):
         self.encoder.save_weights(os.path.join(filename, "encoder", 'model'))
