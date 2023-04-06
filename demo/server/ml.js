@@ -58,11 +58,9 @@ const recommend = (oracles) => {
   const tensor = tf.tensor(vector);
 
   const encoded = encoder.predict(tensor);
-  console.log(encoded.dataSync());
   const recommendations = recommend_decoder.predict([encoded]);
 
   const array = recommendations.dataSync();
-  console.log(array);
 
   const res = [];
 
@@ -74,18 +72,59 @@ const recommend = (oracles) => {
   }  
   
 
-  const sorted = res.sort((a, b) => b.rating - a.rating);
-
-  const adds = sorted.filter((card) => !oracles.includes(card.oracle)).slice(0, 100);
-  const removes = sorted.filter((card) => oracles.includes(card.oracle)).slice(0, 100);
+  const adds =  res.sort((a, b) => b.rating - a.rating).filter((card) => !oracles.includes(card.oracle)).slice(0, 100);
+  const removes =  res.sort((a, b) => a.rating - b.rating).filter((card) => oracles.includes(card.oracle)).slice(0, 100);
   
-
   return {
     adds,
     removes
   }
 }
 
+const deckbuild = (oracles) => {
+
+  if (!encoder || !deckbuilder_decoder) {
+    return {
+      mainboard: [],
+      sideboard: []
+    }
+  }
+
+  const vector = [encodeIndeces(oracles.map(oracle => oracleToIndex[oracle]))];
+  const tensor = tf.tensor(vector);
+
+  const encoded = encoder.predict(tensor);
+  const recommendations = deckbuilder_decoder.predict([encoded]);
+
+  const array = recommendations.dataSync();
+
+  const res = [];
+
+  for (let i = 0; i < numOracles; i++) {
+    const oracle = indexToOracle[i];
+
+    if (oracles.includes(oracle)) {
+      res.push({
+        oracle: indexToOracle[i],
+        rating: array[i]
+      });
+    }
+  }
+
+  const sorted = res.sort((a, b) => b.rating - a.rating);
+  const mainboard = sorted.slice(0, 24);
+  const sideboard = sorted.slice(24, oracles.length).reverse();
+
+
+  return {
+    mainboard,
+    sideboard
+  }
+}
+
+  
+
 module.exports = {
-  recommend
+  recommend,
+  deckbuild
 }

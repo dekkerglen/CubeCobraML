@@ -29,7 +29,6 @@ function RecommendPage() {
     });
 
     const json2 = await response2.json();
-    console.log(json2);
 
     setAdds(json2.adds);
     setRemoves(json2.removes);
@@ -64,7 +63,7 @@ function RecommendPage() {
             <Card key={`${card.name}-${index}`} className="mb-2">
               <CardBody>
                 <img src={card.image} alt={card.name} />
-                {' '}{index+1}. {card.name} - {card.rating}
+                {' '}{index+1}. {card.name} - {Math.round(card.rating * 10000) / 100}%
               </CardBody>
             </Card>
           ))}
@@ -75,7 +74,7 @@ function RecommendPage() {
             <Card key={`${card.name}-${index}`} className="mb-2">
               <CardBody>
                 <img src={card.image} alt={card.name} />
-                {' '}{index+1}. {card.name} - {card.rating}
+                {' '}{index+1}. {card.name} - {Math.round((1-card.rating) * 10000) / 100}%
               </CardBody>
             </Card>
           ))}
