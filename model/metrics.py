@@ -27,6 +27,6 @@ def relative_pick(x, y_true, y_pred):
 
     for i in range(len(y_true)):
         difference = y_true[i] - masked[i]
-        accuracies.append(np.mean(difference))
+        accuracies.append(np.mean(np.abs(difference)))
 
     return np.mean(accuracies)
