@@ -123,7 +123,7 @@ class DataGenerator(Sequence):
         
         pools = np.array(list(map(lambda x: x['pool'], picks)))
         packs = np.array(list(map(lambda x: x['pack'], picks)))
-        picks = np.array(list(map(lambda x: x['pick'], picks)))
+        picks = np.array(list(map(lambda x: [x['pick']], picks)))
 
         x_pool = self.to_vector_encoding(pools, batch_size)
         x_pack = self.to_vector_encoding(packs, batch_size)

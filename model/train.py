@@ -55,6 +55,7 @@ model.compile(
     loss_weights=[loss_weights, loss_weights, loss_weights],
     metrics=['accuracy']
 )
+# top_k_categorical_accuracy
 
 if continue_training == 'true':
     print('Loading Model...\n')

@@ -102,7 +102,7 @@ const processPicks =  (numOracles) => {
 
   for (let i = 0; i < pickFiles.length; i++) {
     const picks = JSON.parse(fs.readFileSync(`${sourceDir}/picks/${pickFiles[i]}`, 'utf8'))
-      .filter((pick) => pick.pack.length > 3 && pick.pool.length > 3 && pick.pack.includes(pick.picked))
+      .filter((pick) => pick.pack.length > 3 && pick.pool.length > 3 && pick.pack.includes(pick.picked) && pick.picked !== -1)
       .map((pick) => ({
         pool: pick.pool.filter((card) => card !== pick.picked),
         pick: pick.picked,
