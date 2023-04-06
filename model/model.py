@@ -86,7 +86,7 @@ class CubeCobraMLSystem(Model):
     def save_weights(self, filename):
         self.encoder.save_weights(os.path.join(filename, "encoder", 'model'))
         self.cube_decoder.save_weights(os.path.join(filename, "cube_decoder", 'model'))
-        self.draft_decoder.save_weights(os.path.join(filename, "_draft_decoder"))
+        self.draft_decoder.save_weights(os.path.join(filename, "draft_decoder"))
         self.deck_build_decoder.save_weights(os.path.join(filename, "deck_build_decoder", 'model'))
 
     def load_weights(self, filename):
