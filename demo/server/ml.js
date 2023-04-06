@@ -141,18 +141,16 @@ const draft = (pack, pool) => {
 
   const array = recommendations.dataSync();
 
-  for (let i = 0; i < numOracles; i++) {
-    array[i] = sigmoid(elos[indexToOracle[i]] * array[i]);
-  }
-
   const res = [];
 
   for (let i = 0; i < numOracles; i++) {
     const oracle = indexToOracle[i];
     if (pack.includes(oracle)) {
+      console.log(elos[i]);
+      console.log(array[i]);
       res.push({
         oracle: indexToOracle[i],
-        rating: array[i]
+        rating: sigmoid(elos[i] * array[i])
       });
     }
   }
