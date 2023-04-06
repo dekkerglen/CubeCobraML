@@ -46,6 +46,13 @@ const sigmoid = (x) => {
   return 1 / (1 + Math.exp(-x));
 }
 
+const softmax = (array) => {
+  const max = Math.max(...array);
+  const exps = array.map((x) => Math.exp(x - max));
+  const sum = exps.reduce((a, b) => a + b, 0);
+  return exps.map((value) => value / sum);
+}
+
 const encodeIndeces = (indeces) => {
   const tensor = new Array(numOracles).fill(0);
 
@@ -141,6 +148,19 @@ const draft = (pack, pool) => {
 
   const array = recommendations.dataSync();
 
+  const intermed = [];
+
+  for (let i = 0; i < numOracles; i++) {
+    const value = array[i] * elos[i];
+    if (pack.includes(indexToOracle[i])) {
+      intermed.push(value);
+    } else {
+      intermed.push(value - 1);
+    }
+  }
+
+  const softmaxed = softmax(intermed);
+
   const res = [];
 
   for (let i = 0; i < numOracles; i++) {
@@ -150,7 +170,7 @@ const draft = (pack, pool) => {
       console.log(array[i]);
       res.push({
         oracle: indexToOracle[i],
-        rating: sigmoid(elos[i] * array[i])
+        rating: softmaxed[i]
       });
     }
   }
