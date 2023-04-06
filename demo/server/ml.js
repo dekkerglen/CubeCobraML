@@ -12,6 +12,7 @@ console.log(numOracles);
 let encoder;
 let recommend_decoder;
 let deckbuilder_decoder;
+let draft_decoder;
 
 tf.loadGraphModel('file://../../model/tfjs_model/encoder/model.json').then((model) => {
   encoder = model;
@@ -30,6 +31,13 @@ tf.loadGraphModel('file://../../model/tfjs_model/cube_decoder/model.json').then(
 tf.loadGraphModel('file://../../model/tfjs_model/deck_build_decoder/model.json').then((model) => {
   deckbuilder_decoder = model;
   console.log('deck_build_decoder loaded');
+}).catch((err) => {
+  console.log(err);
+});
+
+tf.loadGraphModel('file://../../model/tfjs_model/draft_decoder/model.json').then((model) => {
+  draft_decoder = model;
+  console.log('draft_decoder loaded');
 }).catch((err) => {
   console.log(err);
 });
@@ -127,7 +135,7 @@ const draft = (pack, pool) => {
   const tensor = tf.tensor(vector);
 
   const encoded = encoder.predict(tensor);
-  const recommendations = deckbuilder_decoder.predict([encoded]);
+  const recommendations = draft_decoder.predict([encoded]);
 
   const array = recommendations.dataSync();
 
