@@ -102,11 +102,16 @@ const processPicks =  (numOracles) => {
 
   for (let i = 0; i < pickFiles.length; i++) {
     const picks = JSON.parse(fs.readFileSync(`${sourceDir}/picks/${pickFiles[i]}`, 'utf8'))
-      .filter((pick) => pick.pack.length > 3 && pick.pool.length > 3 && pick.pack.includes(pick.picked) && pick.picked !== -1)
+      .filter((pick) => 
+        pick.pack.filter((index) => index !== -1).length > 3
+         && pick.pool.filter((index) => index !== -1).length > 3 
+         && pick.pack.includes(pick.picked) 
+         && pick.picked !== -1
+      )
       .map((pick) => ({
-        pool: pick.pool.filter((card) => card !== pick.picked),
+        pool: pick.pool.filter((card) => card !== pick.picked).filter((index) => index !== -1),
         pick: pick.picked,
-        pack: pick.pack,
+        pack: pick.pack.filter((index) => index !== -1),
       }));
 
     const serialized = JSON.stringify(picks);
