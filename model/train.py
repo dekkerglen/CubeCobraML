@@ -81,7 +81,6 @@ model.fit(
 
 print('Saving Model to {}...\n'.format(model_dir))
 model.save_weights(model_dir)
-model.save_json(model_dir)
 
 print('Done.\n')
 
