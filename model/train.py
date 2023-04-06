@@ -51,9 +51,9 @@ model = CubeCobraMLSystem(len(card_freqs), elos)
 
 model.compile(
     optimizer='adam',
-    loss=['binary_crossentropy','binary_crossentropy','categorical_crossentropy'],
+    loss=['binary_crossentropy','binary_crossentropy', 'binary_crossentropy'],
     loss_weights=[loss_weights, loss_weights, loss_weights],
-    metrics='accuracy'
+    metrics=['accuracy']
 )
 
 if continue_training == 'true':
