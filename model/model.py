@@ -11,8 +11,8 @@ class Encoder(Model):
         super().__init__()
         self.model = Sequential([
             Dense(512, activation='relu', name=name + "_e1"),
-            Dense(128, activation='relu', name=name + "_e3"),
-            Dense(64, activation='relu', name=name + "_bottleneck")
+            Dense(256, activation='relu', name=name + "_e3"),
+            Dense(128, activation='relu', name=name + "_bottleneck")
         ])
     
     def call(self, x):
@@ -33,7 +33,7 @@ class Decoder(Model):
         super().__init__()
 
         self.model = Sequential([
-            Dense(128, activation='relu', name=name + "_d1"),
+            Dense(256, activation='relu', name=name + "_d1"),
             Dense(512, activation='relu', name=name + "_d3"),
             Dense(output_dim, activation=output_act, name=name + "_reconstruction")
         ])

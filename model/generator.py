@@ -108,41 +108,6 @@ class DataGenerator(Sequence):
 
     # decks have mainboard, sideboard, basics
     def generate_decks(self, main_indices, batch_size):        
-        # decks = self.x_decks[main_indices]
-        # mainboards = np.array(list(map(lambda x: x['mainboard'], decks)))
-
-        # deck_vectors = self.encode_deck(mainboards, batch_size)
-
-        # cut_mask = np.zeros((batch_size,self.num_cards))
-        # add_mask = np.zeros((batch_size,self.num_cards))
-        # y_cut_mask = np.zeros((batch_size,self.num_cards))
-
-        # for i,deck in enumerate(deck_vectors):
-        #     includes = np.where(deck == 1)[0]
-        #     excludes = np.where(deck == 0)[0]
-        #     size = len(includes)
-        #     noise = np.clip(
-        #         np.random.normal(self.noise,self.noise_std),
-        #         a_min = 0.05,
-        #         a_max = 0.8,
-        #     )
-        #     flip_amount = int(size * noise)
-        #     flip_include = np.random.choice(includes, flip_amount)
-
-        #     sampler = self.neg_sampler[excludes]
-        #     normalized = sampler / np.sum(sampler)
-            
-        #     flip_exclude = np.random.choice(excludes, flip_amount, p=normalized)
-        #     y_flip_include = np.random.choice(flip_include, flip_amount//4)
-        #     cut_mask[i,flip_include] = -1
-        #     y_cut_mask[i,y_flip_include] = -1
-        #     add_mask[i,flip_exclude] = 1
-
-
-        # x_decks = deck_vectors + cut_mask + add_mask
-        # y_decks = deck_vectors + y_cut_mask
-
-        # return [x_decks, y_decks]
         decks = self.x_decks[main_indices]
 
         mainboards = np.array(list(map(lambda x: x['mainboard'], decks)))

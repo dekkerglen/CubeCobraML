@@ -7,7 +7,7 @@ import os
 import os.path
 import random
 import sys
-from metrics import top_rated_percent
+from metrics import top_rated_percent, relative_pick
 
 # get params
 params = sys.argv[1:]
@@ -66,6 +66,7 @@ pred1, pred2, pred3 = model.predict(x)
 
 print('Untrained cubes accuracy: ', top_rated_percent(y[0], pred1))
 print('Untrained decks accuracy: ', top_rated_percent(y[1], pred2))
+print('Untrained picks accuracy: ', relative_pick(x[2], y[2], pred3))
 
 model.fit(
     generator,
@@ -81,3 +82,4 @@ pred1, pred2, pred3 = model.predict(x)
 
 print('Trained cubes accuracy: ', top_rated_percent(y[0], pred1))
 print('Trained decks accuracy: ', top_rated_percent(y[1], pred2))
+print('Trained picks accuracy: ', relative_pick(x[2], y[2], pred3))

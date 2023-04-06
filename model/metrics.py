@@ -19,3 +19,14 @@ def top_rated_percent(y_true, y_pred):
         accuracies.append(accuracy)
 
     return np.mean(accuracies)
+
+def relative_pick(x, y_true, y_pred):
+    masked = x[0] * y_pred
+
+    accuracies = []
+
+    for i in range(len(y_true)):
+        difference = y_true[i] - masked[i]
+        accuracies.append(np.mean(difference))
+
+    return np.mean(accuracies)

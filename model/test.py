@@ -5,7 +5,7 @@ import numpy as np
 import json
 import os
 import os.path
-from metrics import top_rated_percent
+from metrics import top_rated_percent, relative_pick
 
 data_dir = '../data/test/'
 model_dir = './model/'
@@ -30,7 +30,7 @@ print('Creating Data Generator...\n')
 generator = DataGenerator(
     cubes,
     decks,
-    # picks,
+    picks,
     card_freqs,
     batch_size=64,
 )
@@ -45,11 +45,10 @@ print('Predicting...\n')
 
 x, y = generator.__getitem__(0)
 
-pred1, pred2 = model.predict(x)
+pred1, pred2, pred3 = model.predict(x)
 
-print('Done.\n')
-
-print('Cubes Accuracy: ', top_rated_percent(y[0], pred1))
-print('Decks Accuracy: ', top_rated_percent(y[1], pred2))
+print('Trained cubes accuracy: ', top_rated_percent(y[0], pred1))
+print('Trained decks accuracy: ', top_rated_percent(y[1], pred2))
+print('Trained picks accuracy: ', relative_pick(x[2], y[2], pred3))
 
 exit()
