@@ -6,7 +6,8 @@ import json
 import os
 import os.path
 import sys
-from metrics import top_rated_percent, relative_pick
+# TopKCategoricalAccuracy
+from tensorflow.keras.metrics import TopKCategoricalAccuracy
 
 # get params
 params = sys.argv[1:]
@@ -53,7 +54,7 @@ model.compile(
     optimizer='adam',
     loss=['binary_crossentropy','binary_crossentropy', 'categorical_crossentropy'],
     loss_weights=[loss_weights, loss_weights, loss_weights],
-    metrics={'output_1': 'accuracy', 'output_2': 'accuracy', 'output_3': 'top_k_categorical_accuracy'}
+    metrics={'output_1': 'accuracy', 'output_2': 'accuracy',  'output_3': [TopKCategoricalAccuracy(k=1, name="top1"), TopKCategoricalAccuracy(k=3, name="top3")]}
 )
 # top_k_categorical_accuracy
 
