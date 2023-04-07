@@ -46,7 +46,6 @@ function DraftPage() {
 
     const json3 = await response3.json();
 
-    console.log(json3.picks);
 
     setPicks(json3.picks);
   }, [packText, poolText]);

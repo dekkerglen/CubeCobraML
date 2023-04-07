@@ -42,9 +42,6 @@ tf.loadGraphModel('file://../../model/tfjs_model/draft_decoder/model.json').then
   console.log(err);
 });
 
-const sigmoid = (x) => {
-  return 1 / (1 + Math.exp(-x));
-}
 
 const softmax = (array) => {
   const max = Math.max(...array);
@@ -140,45 +137,74 @@ const deckbuild = (oracles) => {
 }
 
 const draft = (pack, pool) => {
-  const vector = [encodeIndeces(pool.map(oracle => oracleToIndex[oracle]))]; 
-  const tensor = tf.tensor(vector);
-
-  const encoded = encoder.predict(tensor);
-  const recommendations = draft_decoder.predict([encoded]);
-
-  const array = recommendations.dataSync();
-
-  const intermed = [];
-
-  for (let i = 0; i < numOracles; i++) {
-    const value = array[i] * elos[i];
-    if (pack.includes(indexToOracle[i])) {
-      intermed.push(value);
-    } else {
-      intermed.push(value - 1);
+  if (!encoder || !deckbuilder_decoder) {
+    return {
+      mainboard: [],
+      sideboard: []
     }
   }
 
-  const softmaxed = softmax(intermed);
+  const vector = [encodeIndeces(pool.map(oracle => oracleToIndex[oracle]))];
+  const tensor = tf.tensor(vector);
+
+  const encoded = encoder.predict(tensor);
+  const recommendations = deckbuilder_decoder.predict([encoded]);
+
+  const array = recommendations.dataSync();
 
   const res = [];
 
   for (let i = 0; i < numOracles; i++) {
     const oracle = indexToOracle[i];
+
     if (pack.includes(oracle)) {
-      console.log(elos[i]);
-      console.log(array[i]);
       res.push({
         oracle: indexToOracle[i],
-        rating: softmaxed[i]
+        rating: array[i]
       });
     }
   }
-  
-  console.log(res);
 
-  return res.sort((a, b) => b.rating - a.rating);
+   return res.sort((a, b) => b.rating - a.rating);
 }
+
+// const draft = (pack, pool) => {
+//   const vector = [encodeIndeces(pool.map(oracle => oracleToIndex[oracle]))]; 
+//   const tensor = tf.tensor(vector);
+
+//   const encoded = encoder.predict(tensor);
+//   const recommendations = draft_decoder.predict([encoded]);
+
+//   const array = recommendations.dataSync();
+
+//   const intermed = [];
+
+//   for (let i = 0; i < numOracles; i++) {
+//     const value = array[i] * elos[i];
+//     if (pack.includes(indexToOracle[i])) {
+//       intermed.push(value);
+//     } else {
+//       intermed.push(value - 1);
+//     }
+//   }
+
+//   const softmaxed = softmax(intermed);
+
+//   const res = [];
+
+//   for (let i = 0; i < numOracles; i++) {
+//     const oracle = indexToOracle[i];
+//     if (pack.includes(oracle)) {
+//       res.push({
+//         oracle: indexToOracle[i],
+//         rating: softmaxed[i]
+//       });
+//     }
+//   }
+  
+
+//   return res.sort((a, b) => b.rating - a.rating);
+// }
 
 
 
