@@ -103,8 +103,8 @@ const processPicks =  (numOracles) => {
   for (let i = 0; i < pickFiles.length; i++) {
     const picks = JSON.parse(fs.readFileSync(`${sourceDir}/picks/${pickFiles[i]}`, 'utf8'))
       .filter((pick) => 
-        pick.pack.filter((index) => index !== -1).filter((index) => index).length > 3
-         && pick.pool.filter((index) => index !== -1).filter((index) => index).length > 3 
+        pick.pack.filter((index) => index !== -1).filter((index) => index).length > 1
+         && pick.pool.filter((index) => index !== -1) 
          && pick.pack.includes(pick.picked) 
          && pick.picked !== -1
          && pick.picked
