@@ -37,7 +37,7 @@ class DataGenerator(Sequence):
     def __getitem__(self, batch_number):
         X_cubes, y_cubes = self.generate_cubes(self.cube_indices[batch_number * self.batch_size:(batch_number + 1) * self.batch_size], self.batch_size)
         X_decks, y_decks = self.generate_decks(self.deck_indices[batch_number * self.batch_size:(batch_number + 1) * self.batch_size], self.batch_size)
-        X_picks, y_picks = self.generate_picks(self.pick_indices[batch_number * self.batch_size:(batch_number + 1) * self.batch_size], self.batch_size)
+        X_picks, y_picks = self.generate_picks(self.pick_indices[batch_number * self.batch_size:(batch_number + 1) * self.batch_size * 10], self.batch_size)
         
         return [[X_cubes, X_decks, X_picks], [y_cubes, y_decks, y_picks]]
         
