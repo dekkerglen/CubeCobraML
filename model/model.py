@@ -77,11 +77,19 @@ class CubeCobraMLSystem(Model):
         embedding = self.encoder(pools, training=training)
         return self.deck_build_decoder(embedding, training=training)
 
-    def draft(self, packs, pools, training=None):
+    def draft(self, pools, packs, training=None):
         embedding = self.encoder(pools, training=training)
         best_possible_picks = self.draft_decoder(embedding, training=training)
         mask = 1e9 * (1-packs)
         return tf.nn.softmax(best_possible_picks * self.elos * packs - mask)
+    
+    # def draft(self, pools, packs, training=None):
+    #     embedding = self.encoder(pools, training=training)
+    #     best_possible_picks = self.draft_decoder(embedding, training=training)
+    #     picks_adjusted_for_elo = best_possible_picks * packs * self.elos
+    #     # we dont apply softmax because we are executing in graph mode, and categorical crossentropy has logits=True in graph mode (grrr bad keras API)
+    #     mask_for_softmax = 1e9 * (1 - packs)
+    #     return picks_adjusted_for_elo - mask_for_softmax 
 
     def save_weights(self, filename):
         self.encoder.save_weights(os.path.join(filename, "encoder", 'model'))

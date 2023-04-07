@@ -204,11 +204,7 @@ const draft = (pack, pool) => {
   
 
 //   return res.sort((a, b) => b.rating - a.rating);
-// }
-
-
-
-  
+// } 
 
 module.exports = {
   recommend,

@@ -118,16 +118,16 @@ class DataGenerator(Sequence):
 
         return [x, y]
     
-    def generate_picks(self,main_indices, batch_size):
+    def generate_picks(self, main_indices, batch_size):
         picks = self.x_picks[main_indices]
         
         pools = np.array(list(map(lambda x: x['pool'], picks)))
         packs = np.array(list(map(lambda x: x['pack'], picks)))
-        picks = np.array(list(map(lambda x: [x['pick']], picks)))
+        pick = np.array(list(map(lambda x: [x['pick']], picks)))
 
         x_pool = self.to_vector_encoding(pools, batch_size)
         x_pack = self.to_vector_encoding(packs, batch_size)
-        y_pick = self.to_vector_encoding(picks, batch_size)
+        y_pick = self.to_vector_encoding(pick, batch_size)
 
         return [[x_pool, x_pack], y_pick]
 

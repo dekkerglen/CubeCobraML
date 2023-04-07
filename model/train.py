@@ -63,14 +63,6 @@ if continue_training == 'true':
 
 print('Training Model...\n')
 
-x, y = generator.__getitem__(0)
-
-pred1, pred2, pred3 = model.predict(x)
-
-print('Untrained cubes accuracy: ', top_rated_percent(y[0], pred1))
-print('Untrained decks accuracy: ', top_rated_percent(y[1], pred2))
-print('Untrained picks accuracy: ', relative_pick(x[2], y[2], pred3))
-
 model.fit(
     generator,
     epochs=epochs
@@ -80,9 +72,3 @@ print('Saving Model to {}...\n'.format(model_dir))
 model.save_weights(model_dir)
 
 print('Done.\n')
-
-pred1, pred2, pred3 = model.predict(x)
-
-print('Trained cubes accuracy: ', top_rated_percent(y[0], pred1))
-print('Trained decks accuracy: ', top_rated_percent(y[1], pred2))
-print('Trained picks accuracy: ', relative_pick(x[2], y[2], pred3))
