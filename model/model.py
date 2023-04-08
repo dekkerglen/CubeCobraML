@@ -12,7 +12,7 @@ class Encoder(Model):
         self.model = Sequential([
             Dense(512, activation='relu', name=name + "_e1"),
             Dense(256, activation='relu', name=name + "_e3"),
-            Dense(128, activation='relu', name=name + "_bottleneck")
+            Dense(128, activation='linear', name=name + "_bottleneck")
         ])
     
     def call(self, x):
@@ -57,7 +57,8 @@ class CubeCobraMLSystem(Model):
         super().__init__()
         self.encoder = Encoder('encoder')
         self.cube_decoder = Decoder('recommend', num_cards, tf.nn.sigmoid)
-        self.draft_decoder = Decoder('draft', num_cards, tf.nn.relu)
+        # linear
+        self.draft_decoder = Decoder('draft', num_cards, "linear")
         self.deck_build_decoder = Decoder('deck_build', num_cards, tf.nn.sigmoid)
         self.elos = elos
 
