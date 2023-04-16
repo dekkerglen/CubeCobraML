@@ -36,7 +36,7 @@ generator = DataGenerator(
     decks,
     picks,
     card_freqs,
-    batch_size=64,
+    batch_size=256,
 )
 
 print('Loading Model...\n')
@@ -47,12 +47,23 @@ model.load_weights(model_dir)
 
 print('Predicting...\n')
 
-x, y = generator.__getitem__(0)
+accuracies = [0, 0, 0, 0]
 
-pred1, pred2, pred3 = model.predict(x)
+batch_count = generator.__len__()
 
-print('Trained cubes accuracy: ', top_rated_percent(y[0], pred1))
-print('Trained decks accuracy: ', top_rated_percent(y[1], pred2))
-print('Trained picks accuracy: ', relative_pick(x[2], y[2], pred3))
+for i in range(batch_count):
+    print('Batch: ', i + 1, '/', batch_count)
+    x, y = generator.__getitem__(i)
+    pred1, pred2, pred3 = model.predict(x)
+    accuracies[0] += top_rated_percent(y[0], pred1)
+    accuracies[1] += top_rated_percent(y[1], pred2)
+    accuracies[2] += relative_pick(y[2], pred3, 1)
+    accuracies[3] += relative_pick(y[2], pred3, 3)
+
+
+print('Trained cubes accuracy: ', accuracies[0] / batch_count)
+print('Trained decks accuracy: ', accuracies[1] / batch_count)
+print('Trained picks top1: ', accuracies[2] / batch_count)
+print('Trained picks top3: ', accuracies[3] / batch_count)
 
 exit()

@@ -297,7 +297,6 @@ Fyndhorn Elves
 Hexdrinker
 Ignoble Hierarch
 Joraga Treespeaker
-Llanowar Elves
 Noble Hierarch
 Devoted Druid
 Fauna Shaman

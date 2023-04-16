@@ -1,11 +1,9 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.models import Model, Sequential
-# import tensorflowjs as tfjs
 from tensorflow import keras
 
 import os
-
 class Encoder(Model):
     def __init__(self,name):
         super().__init__()
@@ -24,9 +22,6 @@ class Encoder(Model):
 
     def load_weights(self, filename):
         self.model = keras.models.load_model(filename)
-
-    # def save_json(self, filename):
-    #     tfjs.converters.save_keras_model(self.model, filename)
     
 class Decoder(Model):
     def __init__(self, name, output_dim, output_act):
@@ -48,10 +43,7 @@ class Decoder(Model):
     def load_weights(self, filename):
         print('Loading weights from ' + filename)
         self.model = keras.models.load_model(filename)
-        
-    # def save_json(self, filename):
-    #     tfjs.converters.save_keras_model(self.model, filename)
-        
+                
 class CubeCobraMLSystem(Model):
     def __init__(self, num_cards, elos):
         super().__init__()
@@ -84,14 +76,6 @@ class CubeCobraMLSystem(Model):
         mask = 1e9 * (1-packs)
         return tf.nn.softmax(best_possible_picks * self.elos * packs - mask)
     
-    # def draft(self, pools, packs, training=None):
-    #     embedding = self.encoder(pools, training=training)
-    #     best_possible_picks = self.draft_decoder(embedding, training=training)
-    #     picks_adjusted_for_elo = best_possible_picks * packs * self.elos
-    #     # we dont apply softmax because we are executing in graph mode, and categorical crossentropy has logits=True in graph mode (grrr bad keras API)
-    #     mask_for_softmax = 1e9 * (1 - packs)
-    #     return picks_adjusted_for_elo - mask_for_softmax 
-
     def save_weights(self, filename):
         self.encoder.save_weights(os.path.join(filename, "encoder", 'model'))
         self.cube_decoder.save_weights(os.path.join(filename, "cube_decoder", 'model'))
