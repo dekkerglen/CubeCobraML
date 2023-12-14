@@ -8,6 +8,7 @@ class DataGenerator(Sequence):
         decks,
         picks,
         card_freqs,
+        card_correlations,
         batch_size=128,
         noise=0.2,
         noise_std=0.1,
@@ -17,6 +18,11 @@ class DataGenerator(Sequence):
         self.noise = noise
         self.noise_std = noise_std
         self.num_cards = len(card_freqs)
+
+        
+        self.card_correlations_y = card_correlations
+        self.card_correlations_x = np.identity(self.num_cards)
+
         # inverse of card frequency
         self.neg_sampler = np.array([1/(freq+1) for freq in card_freqs])
         print (self.neg_sampler)
@@ -28,6 +34,7 @@ class DataGenerator(Sequence):
         self.cube_indices = np.arange(len(self.x_cubes))
         self.deck_indices = np.arange(len(self.x_decks))
         self.pick_indices = np.arange(len(self.x_picks))
+        self.corr_indices = np.arange(self.num_cards)
         
         self.shuffle_indeces()
         
@@ -38,13 +45,18 @@ class DataGenerator(Sequence):
         X_cubes, y_cubes = self.generate_cubes(self.cube_indices[batch_number * self.batch_size:(batch_number + 1) * self.batch_size], self.batch_size)
         X_decks, y_decks = self.generate_decks(self.deck_indices[batch_number * self.batch_size:(batch_number + 1) * self.batch_size], self.batch_size)
         X_picks, y_picks = self.generate_picks(self.pick_indices[batch_number * self.batch_size:(batch_number + 1) * self.batch_size], self.batch_size)
+
+        corr_indeces = self.corr_indices[batch_number * self.batch_size:(batch_number + 1) * self.batch_size]
+        x_corr = self.card_correlations_x[corr_indeces]
+        y_corr = self.card_correlations_y[corr_indeces]
         
-        return [[X_cubes, X_decks, X_picks], [y_cubes, y_decks, y_picks]]
+        return [[X_cubes, X_decks, X_picks, x_corr], [y_cubes, y_decks, y_picks, y_corr]]
         
     def shuffle_indeces(self):
         np.random.shuffle(self.cube_indices)
         np.random.shuffle(self.deck_indices)
         np.random.shuffle(self.pick_indices)
+        np.random.shuffle(self.corr_indices)
 
     def on_epoch_end(self):
         self.shuffle_indeces()

@@ -7,6 +7,7 @@ const testDir = 'data/test';
 const TEST_PERCENT = 0.1;
 
 
+// this is for saving files larger than the string buffer limit
 function writeFile(filepath, data) {
   
   const fd = fs.openSync(filepath, 'w');
@@ -56,8 +57,22 @@ const processCubes = (numOracles) => {
   console.log('\tDone processing cubes.');
 }
 
-const processDecks = (numOracles) => {
+const incrementCorrelation = (correlations, oracleIndex1, oracleIndex2, oracleCount) => {
+  if (oracleIndex1 === oracleIndex2) {
+    return;
+  }
+
+  const index1 = oracleIndex1 * oracleCount + oracleIndex2;
+  const index2 = oracleIndex2 * oracleCount + oracleIndex1;
+
+  correlations[index1]++;
+  correlations[index2]++;
+}
+
+const processDecks = (oracleCount) => {
   console.log('\tLoading decks...');
+
+  const correlations = new Int32Array(oracleCount * oracleCount);
 
   // enumurate src/decks
   const deckFiles = fs.readdirSync(`${sourceDir}/decks`);
@@ -73,13 +88,23 @@ const processDecks = (numOracles) => {
         mainboard: deck.mainboard.filter((card) => !(deck.basics || []).includes(card)),
         sideboard: deck.sideboard.filter((card) => !(deck.basics || []).includes(card)),
       })));
+
+    for (let j = 0; j < decks.length; j++) {
+      for (let k = 0; k < decks[j].mainboard.length; k++) {
+        for (let l = k + 1; l < decks[j].mainboard.length; l++) {
+          incrementCorrelation(correlations, decks[j].mainboard[k], decks[j].mainboard[l], oracleCount);
+        }
+      }
+    }
+
+    console.log(`\tProcessed ${i + 1} of ${deckFiles.length} deck files.`);
   }
 
   fs.writeFileSync(`${trainDir}/decks.json`, JSON.stringify(decks.slice(0, Math.floor(decks.length * (1-TEST_PERCENT)))));
   fs.writeFileSync(`${testDir}/decks.json`, JSON.stringify(decks.slice(Math.floor(decks.length * (1-TEST_PERCENT)))));
+  writeFile(`${trainDir}/correlations.json`, correlations);
 
   console.log(`\tDone processing ${decks.length} decks.`);
-
 }
 
 const processPicks =  (numOracles) => {
