@@ -30,8 +30,12 @@ Navigate to `/model/`
 
 You have a couple executable files there:
 
-- `train.py` trains the model
-- `test.py` tests the model
+- `python train.py 10 128 false 1.0` trains the model with:
+    - 10 epochs
+    - 128 batch size
+    - false continuing training from a previous model
+    - 1.0 for the loss weights
+- `python test.py` tests the model
 
 As well as a conversion script. This script needs to be run from the root folder like:
 `sh model/convert.sh`
@@ -46,3 +50,10 @@ Then run the client from `/demo/client` with `npm start`
 
 Wait a minute, and then a browser window should open with the demo at `localhost:3000`
 
+## Uploading data to s3
+
+To recursively upload the `data` folder to s3, run
+`aws s3 cp data s3://cubecobra-private/training-2023/data --recursive`
+
+And to download it, run
+`aws s3 cp s3://cubecobra-private/training-2023/data data --recursive`

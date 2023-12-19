@@ -5,11 +5,24 @@ const trainDir = 'data/train';
 const testDir = 'data/test';
 
 const TEST_PERCENT = 0.1;
+const WRITE_BATCH_SIZE = 10000;
 
+const ensureDir = (dir) => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir);
+  }
+}
+
+const padLeft = (number, length) => {
+  let str = '' + number;
+  while (str.length < length) {
+    str = '0' + str;
+  }
+  return str;
+}
 
 // this is for saving files larger than the string buffer limit
-function writeFile(filepath, data) {
-  
+function writeFile(filepath, data) {  
   const fd = fs.openSync(filepath, 'w');
   
   fs.writeSync(fd, '[');
@@ -19,10 +32,42 @@ function writeFile(filepath, data) {
   for (let i = 0; i < data.length; i += batchSize) {
     const serialized = JSON.stringify(data.slice(i, i + batchSize));
 
+
     // trim the brackets
     fs.writeSync(fd, serialized.substring(1, serialized.length - 1));
 
     if (i + batchSize < data.length) {
+      fs.writeSync(fd, ',');
+    }
+  }
+  
+  fs.writeSync(fd, ']');
+  fs.closeSync(fd);
+}
+
+function writeLargeArray(filepath, arr) {  
+  const fd = fs.openSync(filepath, 'w');
+  
+  fs.writeSync(fd, '[');
+
+  const batchSize = 10000;
+
+  for (let i = 0; i < arr.length; i += batchSize) {
+
+    const slice = arr.slice(i, i + batchSize);
+
+    // need to make sure this is a list, not a weird map
+    const serialized = JSON.stringify(slice, (k, v) => {
+      if (v instanceof  Int32Array) {
+          return Array.apply([], v);
+      }
+      return v;
+    });
+
+    // trim the brackets
+    fs.writeSync(fd, serialized.substring(1, serialized.length - 1));
+
+    if (i + batchSize < arr.length) {
       fs.writeSync(fd, ',');
     }
   }
@@ -34,6 +79,8 @@ function writeFile(filepath, data) {
 
 const processCubes = (numOracles) => {
   console.log('\tLoading cubes...');
+
+  let cubeCount = 0;
 
   const cubes = JSON.parse(fs.readFileSync(`${sourceDir}/cubes.json`, 'utf8'))
     .filter((cube) => cube.cards.length > 0)
@@ -49,12 +96,28 @@ const processCubes = (numOracles) => {
 
   console.log(`\tLoaded ${cubes.length} cubes.`);
 
-  fs.writeFileSync(`${trainDir}/cubes.json`, JSON.stringify(cubes.slice(0, Math.floor(cubes.length * (1-TEST_PERCENT)))));
-  fs.writeFileSync(`${testDir}/cubes.json`, JSON.stringify(cubes.slice(Math.floor(cubes.length * (1-TEST_PERCENT)))));
+  const train =cubes.slice(0, Math.floor(cubes.length * (1-TEST_PERCENT)));
+  const test = cubes.slice(Math.floor(cubes.length * (1-TEST_PERCENT)));
+
+  ensureDir(`${trainDir}/cubes`);
+  ensureDir(`${testDir}/cubes`);
+
+
+  for (let i = 0; i < train.length / WRITE_BATCH_SIZE; i++) {
+    cubeCount += train.slice(i * WRITE_BATCH_SIZE, (i + 1) * WRITE_BATCH_SIZE).length;
+    writeFile(`${trainDir}/cubes/${padLeft(i, 4)}.json`, train.slice(i * WRITE_BATCH_SIZE, (i + 1) * WRITE_BATCH_SIZE));
+  }
+
+  for (let i = 0; i < test.length / WRITE_BATCH_SIZE; i++) {
+    writeFile(`${testDir}/cubes/${padLeft(i, 4)}.json`, test.slice(i * WRITE_BATCH_SIZE, (i + 1) * WRITE_BATCH_SIZE));
+  }
+  
   fs.writeFileSync(`${trainDir}/oracleFrequency.json`, JSON.stringify(oracleFrequency));
   fs.writeFileSync(`${testDir}/oracleFrequency.json`, JSON.stringify(oracleFrequency));
   
   console.log('\tDone processing cubes.');
+
+  return cubeCount;
 }
 
 const incrementCorrelation = (correlations, oracleIndex1, oracleIndex2, oracleCount) => {
@@ -71,6 +134,8 @@ const incrementCorrelation = (correlations, oracleIndex1, oracleIndex2, oracleCo
 
 const processDecks = (oracleCount) => {
   console.log('\tLoading decks...');
+
+  let numDecks = 0;
 
   const correlations = new Int32Array(oracleCount * oracleCount);
 
@@ -100,15 +165,32 @@ const processDecks = (oracleCount) => {
     console.log(`\tProcessed ${i + 1} of ${deckFiles.length} deck files.`);
   }
 
-  fs.writeFileSync(`${trainDir}/decks.json`, JSON.stringify(decks.slice(0, Math.floor(decks.length * (1-TEST_PERCENT)))));
-  fs.writeFileSync(`${testDir}/decks.json`, JSON.stringify(decks.slice(Math.floor(decks.length * (1-TEST_PERCENT)))));
-  writeFile(`${trainDir}/correlations.json`, correlations);
+  const train = decks.slice(0, Math.floor(decks.length * (1-TEST_PERCENT)));
+  const test = decks.slice(Math.floor(decks.length * (1-TEST_PERCENT)));
+
+  ensureDir(`${trainDir}/decks`);
+  ensureDir(`${testDir}/decks`);
+
+  for (let i = 0; i < train.length / WRITE_BATCH_SIZE; i++) {
+    numDecks += train.slice(i * WRITE_BATCH_SIZE, (i + 1) * WRITE_BATCH_SIZE).length;
+    writeFile(`${trainDir}/decks/${padLeft(i, 4)}.json`, train.slice(i * WRITE_BATCH_SIZE, (i + 1) * WRITE_BATCH_SIZE));
+  }
+
+  for (let i = 0; i < test.length / WRITE_BATCH_SIZE; i++) {
+    writeFile(`${testDir}/decks/${padLeft(i, 4)}.json`, test.slice(i * WRITE_BATCH_SIZE, (i + 1) * WRITE_BATCH_SIZE));
+  }
+
+  writeLargeArray(`${trainDir}/correlations.json`, correlations);
 
   console.log(`\tDone processing ${decks.length} decks.`);
+
+  return numDecks;
 }
 
 const processPicks =  (numOracles) => {
   console.log('\tLoading picks...');
+
+  let numPicks = 0;
 
   // enumurate src/picks
   const pickFiles = fs.readdirSync(`${sourceDir}/picks`);
@@ -116,14 +198,34 @@ const processPicks =  (numOracles) => {
   console.log(`\tLoaded ${pickFiles.length} pick files.`);
   console.log("\tWriting picks to file...");
 
-  
-  const trainFile = fs.openSync(`${trainDir}/picks.json`, 'w');
-  const testFile = fs.openSync(`${testDir}/picks.json`, 'w');
-  fs.writeSync(trainFile, '[');
-  fs.writeSync(testFile, '[');
+  ensureDir(`${trainDir}/picks`);
+  ensureDir(`${testDir}/picks`);
 
-  let wroteTrain = false;
-  let wroteTest = false;
+  let trainIndex = 0;
+  let testIndex = 0;
+
+  let trainSize = 0;
+  let testSize = 0;
+
+  const nextTrainFile = () => {
+    const trainFile = fs.openSync(`${trainDir}/picks/${padLeft(trainIndex, 4)}.json`, 'w');
+    fs.writeSync(trainFile, '[');
+    return trainFile;
+  }
+
+  const nextTestFile = () => {
+    const testFile = fs.openSync(`${testDir}/picks/${padLeft(testIndex, 4)}.json`, 'w');
+    fs.writeSync(testFile, '[');
+    return testFile;
+  }
+
+  const closeFile = (file) => {
+    fs.writeSync(file, ']');
+    fs.closeSync(file);
+  } 
+
+  let trainFile = nextTrainFile();
+  let testFile = nextTestFile();
 
   for (let i = 0; i < pickFiles.length; i++) {
     const picks = JSON.parse(fs.readFileSync(`${sourceDir}/picks/${pickFiles[i]}`, 'utf8'))
@@ -140,35 +242,78 @@ const processPicks =  (numOracles) => {
         pack: pick.pack.filter((index) => index !== -1).filter((index) => index),
       }));
 
-    const serialized = JSON.stringify(picks);
-      
-    if (i / pickFiles.length > TEST_PERCENT) {
-      if (wroteTest) {
-        fs.writeSync(trainFile, ',');
-      } else {
-        wroteTest = true;
-      }
-      fs.writeSync(trainFile, serialized.substring(1, serialized.length - 1));
+    const train = picks.slice(0, Math.floor(picks.length * (1-TEST_PERCENT)));
+    const test = picks.slice(Math.floor(picks.length * (1-TEST_PERCENT)));
+    
+    numPicks += train.length;
 
-    } else {
-      if (wroteTrain) {
-        fs.writeSync(testFile, ',');
+    if (train.length > 0) {
+      if (trainSize + train.length > WRITE_BATCH_SIZE) {
+        const toAppendSerialized = JSON.stringify(train.slice(0, WRITE_BATCH_SIZE - trainSize));
+        const toWrite = train.slice(WRITE_BATCH_SIZE - trainSize);
+        const toWriteSerialized = JSON.stringify(toWrite);        
+
+        fs.writeFileSync(trainFile, toAppendSerialized.substring(1, toAppendSerialized.length - 1));
+        closeFile(trainFile);
+
+        trainIndex++;
+        trainFile = nextTrainFile();
+        fs.writeFileSync(trainFile, toWriteSerialized.substring(1, toWriteSerialized.length - 1));
+        trainSize = toWrite.length;
+
+        if (trainSize < WRITE_BATCH_SIZE) {
+          fs.writeFileSync(trainFile, ',');
+        }
       } else {
-        wroteTrain = true;
+        const serialized = JSON.stringify(train);
+
+        fs.writeFileSync(trainFile, serialized.substring(1, serialized.length - 1));
+        trainSize += train.length;
+
+        if (trainSize < WRITE_BATCH_SIZE) {
+          fs.writeFileSync(trainFile, ',');
+        }
       }
-      fs.writeSync(testFile, serialized.substring(1, serialized.length - 1));
     }
     
+    if (test.length > 0) {
+      if (testSize + test.length > WRITE_BATCH_SIZE) {
+        const toAppendSerialized = JSON.stringify(test.slice(0, WRITE_BATCH_SIZE - testSize));
+        const toWrite = test.slice(WRITE_BATCH_SIZE - testSize);
+        const toWriteSerialized = JSON.stringify(toWrite);
+
+        fs.writeFileSync(testFile, toAppendSerialized.substring(1, toAppendSerialized.length - 1));
+        closeFile(testFile);
+
+        testIndex++;
+        testFile = nextTestFile();
+        fs.writeFileSync(testFile, toWriteSerialized.substring(1, toWriteSerialized.length - 1));
+        testSize = toWrite.length;
+
+        if (testSize < WRITE_BATCH_SIZE) {
+          fs.writeFileSync(testFile, ',');
+        }
+      } else {
+        const serialized = JSON.stringify(test);
+
+        fs.writeFileSync(testFile, serialized.substring(1, serialized.length - 1));
+        testSize += test.length;
+
+        if (testSize < WRITE_BATCH_SIZE) {
+          fs.writeFileSync(testFile, ',');
+        }
+      }
+    }
+
     console.log(`\t\tProcessed ${i} / ${pickFiles.length}`);
   }
 
-  fs.writeSync(trainFile, ']');
-  fs.writeSync(testFile, ']');
-  fs.closeSync(trainFile);
-  fs.closeSync(testFile);
-  
+  closeFile(trainFile);
+  closeFile(testFile);
 
   console.log(`\tDone processing ${pickFiles.length} pick files.`);
+
+  return numPicks;
 }
 
 const processOracleDict = () => {
@@ -203,16 +348,20 @@ const run =  () => {
     fs.mkdirSync(trainDir);
   }
 
-  const numOracles = processOracleDict();
+  const metadata = {};
+
+  metadata.numOracles = processOracleDict();
 
   console.log('Processing cubes...');
-  processCubes(numOracles);
+  metadata.numCubes = processCubes(metadata.numOracles);
 
   console.log('Processing decks...');
-  processDecks(numOracles);
+  metadata.numDecks = processDecks(metadata.numOracles);
 
   console.log('Processing picks...');
-  processPicks(numOracles);
+  metadata.numPicks = processPicks(metadata.numOracles);
+
+  fs.writeFileSync(`${trainDir}/metadata.json`, JSON.stringify(metadata));
 
   console.log('Done!');
   process.exit(0);

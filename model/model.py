@@ -49,7 +49,6 @@ class CubeCobraMLSystem(Model):
         super().__init__()
         self.encoder = Encoder('encoder')
         self.cube_decoder = Decoder('recommend', num_cards, tf.nn.sigmoid)
-        # linear
         self.draft_decoder = Decoder('draft', num_cards, "linear")
         self.deck_build_decoder = Decoder('deck_build', num_cards, tf.nn.sigmoid)
         self.correlation_decoder = Decoder('correlate', num_cards, tf.nn.softmax)

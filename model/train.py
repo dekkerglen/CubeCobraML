@@ -21,25 +21,21 @@ data_dir = '../data/train/'
 model_dir = './model/'
 
 print('Loading Data...\n')
-
-# open json files
-with open(os.path.join(data_dir, 'cubes.json')) as f:
-    cubes = json.load(f)
-with open(os.path.join(data_dir, 'decks.json')) as f:
-    decks = json.load(f)
-with open(os.path.join(data_dir, 'picks.json')) as f:
-    picks = json.load(f)
 with open(os.path.join(data_dir, 'oracleFrequency.json')) as f:
     card_freqs = json.load(f)
+with open(os.path.join(data_dir, 'correlations.json')) as f:
+    card_correlations = json.load(f)
     
 print('Creating Data Generator...\n')
 
 
 generator = DataGenerator(
-    cubes,
-    decks,
-    picks,
+    '{}cubes/'.format(data_dir),
+    '{}decks/'.format(data_dir),
+    '{}picks/'.format(data_dir),
+    '{}metadata.json'.format(data_dir),
     card_freqs,
+    card_correlations,
     batch_size=batch_size,
 )
 
