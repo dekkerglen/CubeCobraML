@@ -66,9 +66,8 @@ class DataGenerator(Sequence):
         # load those files
         cubes = []
         while len(cubes) < self.batch_size:
-            curr_cube_file = self.x_cubes_files[self.cube_indices[self.cube_files_index]]
-
             if self.cube_index == 0:
+                curr_cube_file = self.x_cubes_files[self.cube_indices[self.cube_files_index]]
                 with open(os.path.join(self.cubes_path, curr_cube_file)) as f:
                     self.cube_file = json.load(f)
 
@@ -77,7 +76,7 @@ class DataGenerator(Sequence):
             needed = self.batch_size - current_length
 
             # if we need more than what's left in the file, add what's left and move to next file
-            if needed > file_length + self.cube_index:
+            if needed > file_length - self.cube_index:
                 # append rest of file
                 cubes += self.cube_file[self.cube_index:]
                 # move to next file
@@ -101,7 +100,7 @@ class DataGenerator(Sequence):
             needed = self.batch_size - current_length
 
             # if we need more than what's left in the file, add what's left and move to next file
-            if needed > file_length + self.deck_index:
+            if needed > file_length - self.deck_index:
                 # append rest of file
                 decks += self.deck_file[self.deck_index:]
                 # move to next file
@@ -125,7 +124,7 @@ class DataGenerator(Sequence):
             needed = self.batch_size - current_length
 
             # if we need more than what's left in the file, add what's left and move to next file
-            if needed > file_length + self.pick_index:
+            if needed > file_length - self.pick_index:
                 # append rest of file
                 picks += self.pick_file[self.pick_index:]
                 # move to next file
