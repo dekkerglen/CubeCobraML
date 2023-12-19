@@ -32,108 +32,60 @@ class DataGenerator(Sequence):
         self.decks_path = decks_path
         self.picks_path = picks_path
 
-        # load metadata
-        with open(metadata_path) as f:
-            metadata = json.load(f)
-
-        # number of files in cubes_path
-        self.x_cubes = metadata['numCubes']
-        self.x_decks = metadata['numDecks']
-        self.x_picks = metadata['numPicks']
-
         # list of files in cubes_path
         self.x_cubes_files = np.array(os.listdir(cubes_path))
         self.x_decks_files = np.array(os.listdir(decks_path))
         self.x_picks_files = np.array(os.listdir(picks_path))
 
-        self.cube_indices = np.arange(len(self.x_cubes_files))
-        self.deck_indices = np.arange(len(self.x_decks_files))
-        self.pick_indices = np.arange(len(self.x_picks_files))
-        self.corr_indices = np.arange(self.num_cards)
+        self.cubes = self.load_all(self.x_cubes_files, cubes_path)
+        self.decks = self.load_all(self.x_decks_files, decks_path)
+        self.picks = self.load_all(self.x_picks_files, picks_path)
 
-        self.cube_file = []
-        self.deck_file = []
-        self.pick_file = []
+        self.x_cubes = len(self.cubes)
+        self.x_decks = len(self.decks)
+        self.x_picks = len(self.picks)
+
+        self.corr_indices = np.arange(self.num_cards)
+        self.cube_indices = np.arange(self.x_cubes)
+        self.deck_indices = np.arange(self.x_decks)
+        self.pick_indices = np.arange(self.x_picks)
 
         self.samples_per_epoch = max(self.x_cubes, self.x_decks, self.x_picks)
         
         self.prep_next_epoch()
-        
+
+    def load_all(self, files, path):
+        data = []
+        for file in files:
+            with open(os.path.join(path, file)) as f:
+                data += json.load(f)
+        return np.array(data)    
+    
     def __len__(self):
         return self.samples_per_epoch // self.batch_size
 
     def __getitem__(self, batch_number):
         # load those files
         cubes = []
-        while len(cubes) < self.batch_size:
-            if self.cube_index == 0:
-                curr_cube_file = self.x_cubes_files[self.cube_indices[self.cube_files_index]]
-                with open(os.path.join(self.cubes_path, curr_cube_file)) as f:
-                    self.cube_file = json.load(f)
-
-            file_length = len(self.cube_file)
-            current_length = len(cubes)
-            needed = self.batch_size - current_length
-
-            # if we need more than what's left in the file, add what's left and move to next file
-            if needed > file_length - self.cube_index:
-                # append rest of file
-                cubes += self.cube_file[self.cube_index:]
-                # move to next file
-                self.cube_index = 0
-                self.cube_files_index += 1
-                self.cube_files_index %= len(self.x_cubes_files)
-            else:
-                cubes += self.cube_file[self.cube_index:self.cube_index+needed]
-                self.cube_index += needed
-
+        cube_index = (batch_number * self.batch_size) % self.x_cubes
+        if cube_index + self.batch_size < self.x_cubes:
+            cubes = self.cubes[cube_index:cube_index+self.batch_size]
+        else:
+            cubes = np.concatenate((self.cubes[cube_index:], self.cubes[:self.batch_size - (self.x_cubes - cube_index)]))
+        
         decks = []
-        while len(decks) < self.batch_size:
-            curr_deck_file = self.x_decks_files[self.deck_indices[self.deck_files_index]]
-
-            if self.deck_index == 0:              
-                with open(os.path.join(self.decks_path, curr_deck_file)) as f:
-                    self.deck_file = json.load(f)
-
-            file_length = len(self.deck_file)
-            current_length = len(decks)
-            needed = self.batch_size - current_length
-
-            # if we need more than what's left in the file, add what's left and move to next file
-            if needed > file_length - self.deck_index:
-                # append rest of file
-                decks += self.deck_file[self.deck_index:]
-                # move to next file
-                self.deck_index = 0
-                self.deck_files_index += 1
-                self.deck_files_index %= len(self.x_decks_files)
-            else:
-                decks += self.deck_file[self.deck_index:self.deck_index+needed]
-                self.deck_index += needed
+        deck_index = (batch_number * self.batch_size) % self.x_decks
+        if deck_index + self.batch_size < self.x_decks:
+            decks = self.decks[deck_index:deck_index+self.batch_size]
+        else:
+            decks = np.concatenate((self.decks[deck_index:], self.decks[:self.batch_size - (self.x_decks - deck_index)]))
 
         picks = []
-        while len(picks) < self.batch_size:
-            curr_pick_file = self.x_picks_files[self.pick_indices[self.pick_files_index]]
-
-            if self.pick_index == 0:
-                with open(os.path.join(self.picks_path, curr_pick_file)) as f:
-                    self.pick_file = json.load(f)
-
-            file_length = len(self.pick_file)
-            current_length = len(picks)
-            needed = self.batch_size - current_length
-
-            # if we need more than what's left in the file, add what's left and move to next file
-            if needed > file_length - self.pick_index:
-                # append rest of file
-                picks += self.pick_file[self.pick_index:]
-                # move to next file
-                self.pick_index = 0
-                self.pick_files_index += 1
-                self.pick_files_index %= len(self.x_picks_files)
-            else:
-                picks += self.pick_file[self.pick_index:self.pick_index+needed]
-                self.pick_index += needed
+        pick_index = (batch_number * self.batch_size) % self.x_picks
+        if pick_index + self.batch_size < self.x_picks:
+            picks = self.picks[pick_index:pick_index+self.batch_size]
+        else:
+            picks = np.concatenate((self.picks[pick_index:], self.picks[:self.batch_size - (self.x_picks - pick_index)]))
 
         X_cubes, y_cubes = self.generate_cubes(np.array(cubes), self.batch_size)
         X_decks, y_decks = self.generate_decks(np.array(decks), self.batch_size)
@@ -151,14 +103,6 @@ class DataGenerator(Sequence):
         np.random.shuffle(self.deck_indices)
         np.random.shuffle(self.pick_indices)
         np.random.shuffle(self.corr_indices)
-
-        self.cube_index = 0
-        self.deck_index = 0
-        self.pick_index = 0
-
-        self.cube_files_index = 0
-        self.deck_files_index = 0
-        self.pick_files_index = 0
 
     def on_epoch_end(self):
         self.prep_next_epoch()
