@@ -40,7 +40,7 @@ class TestGenerator(unittest.TestCase):
         self.assertEqual(self.generator.num_cards, len(self.card_freqs))
         self.assertEqual(self.generator.cubes_path, self.cubes_path)
         self.assertEqual(self.generator.decks_path, self.decks_path)
-        self.assertEqual(self.generator.picks_pack, self.picks_pack)
+        self.assertEqual(self.generator.picks_path, self.picks_pack)
 
         with open(self.metadata_path) as f:
             metadata = json.load(f)

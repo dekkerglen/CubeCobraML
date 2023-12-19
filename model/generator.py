@@ -8,7 +8,7 @@ class DataGenerator(Sequence):
         self,
         cubes_path,
         decks_path,
-        picks_pack,
+        picks_path,
         metadata_path,
         card_freqs,
         card_correlations,
@@ -30,7 +30,7 @@ class DataGenerator(Sequence):
 
         self.cubes_path = cubes_path
         self.decks_path = decks_path
-        self.picks_pack = picks_pack
+        self.picks_path = picks_path
 
         # load metadata
         with open(metadata_path) as f:
@@ -44,7 +44,7 @@ class DataGenerator(Sequence):
         # list of files in cubes_path
         self.x_cubes_files = np.array(os.listdir(cubes_path))
         self.x_decks_files = np.array(os.listdir(decks_path))
-        self.x_picks_files = np.array(os.listdir(picks_pack))
+        self.x_picks_files = np.array(os.listdir(picks_path))
 
         self.cube_indices = np.arange(len(self.x_cubes_files))
         self.deck_indices = np.arange(len(self.x_decks_files))
@@ -89,7 +89,7 @@ class DataGenerator(Sequence):
 
         decks = []
         while len(decks) < self.batch_size:
-            curr_deck_file = self.x_decks_files[self.deck_indices[self.deck_index]]
+            curr_deck_file = self.x_decks_files[self.deck_indices[self.deck_files_index]]
 
             if self.deck_index == 0:              
                 with open(os.path.join(self.decks_path, curr_deck_file)) as f:
@@ -113,10 +113,10 @@ class DataGenerator(Sequence):
 
         picks = []
         while len(picks) < self.batch_size:
-            curr_pick_file = self.x_picks_files[self.pick_indices[self.pick_index]]
+            curr_pick_file = self.x_picks_files[self.pick_indices[self.pick_files_index]]
 
             if self.pick_index == 0:
-                with open(os.path.join(self.picks_pack, curr_pick_file)) as f:
+                with open(os.path.join(self.picks_path, curr_pick_file)) as f:
                     self.pick_file = json.load(f)
 
             file_length = len(self.pick_file)
