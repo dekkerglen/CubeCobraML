@@ -100,9 +100,9 @@ class DataGenerator(Sequence):
         
     def prep_next_epoch(self):
         # shuffle all indices
-        np.random.shuffle(self.cube_indices)
-        np.random.shuffle(self.deck_indices)
-        np.random.shuffle(self.pick_indices)
+        np.random.shuffle(self.cubes)
+        np.random.shuffle(self.decks)
+        np.random.shuffle(self.picks)
         np.random.shuffle(self.corr_indices)
 
     def on_epoch_end(self):
