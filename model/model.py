@@ -77,7 +77,8 @@ class CubeCobraMLSystem(Model):
         return tf.nn.softmax(best_possible_picks * packs - mask)
     
     def correlate(self, inputs, training=None):
-        return self.correlation_decoder(inputs, training=training)
+        embedding = self.encoder(inputs, training=training)
+        return self.correlation_decoder(embedding, training=training)
     
     def save_weights(self, filename):
         self.encoder.save_weights(os.path.join(filename, "encoder", 'model'))
