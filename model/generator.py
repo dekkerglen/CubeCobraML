@@ -23,8 +23,8 @@ class DataGenerator(Sequence):
         self.num_cards = len(card_freqs)
 
         # card_correlations is stored in 1d format, but we need it in 2d format based on num_cards x num_cards
-        self.card_correlations = np.array(card_correlations)
-        self.card_correlations = self.card_correlations.reshape((self.num_cards, self.num_cards))
+        self.card_correlations_y = np.array(card_correlations)
+        self.card_correlations_y = self.card_correlations.reshape((self.num_cards, self.num_cards))
         self.card_correlations_x = np.identity(self.num_cards)
 
         # inverse of card frequency
