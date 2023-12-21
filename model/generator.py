@@ -95,7 +95,7 @@ class DataGenerator(Sequence):
         if cube_index + self.cube_batch_size < self.x_cubes:
             cubes = self.cubes[cube_index:cube_index+self.cube_batch_size]
         else:
-            cubes = np.concatenate((self.cubes[cube_index:], self.cubes[:self.deck_batch_size - (self.x_cubes - cube_index)]))
+            cubes = np.concatenate((self.cubes[cube_index:], self.cubes[:self.cube_batch_size - (self.x_cubes - cube_index)]))
         
         decks = []
         deck_index = (batch_number * self.deck_batch_size) % self.x_decks
