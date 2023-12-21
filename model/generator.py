@@ -14,6 +14,8 @@ class DataGenerator(Sequence):
         num_batches=128,
         noise=0.2,
         noise_std=0.1,
+        corr_multiplier=32, # loop through correlations 32 times per epoch
+        cube_multiplier=8, # loop through cubes 8 times per epoch
     ):
         super().__init__()
 
@@ -63,8 +65,8 @@ class DataGenerator(Sequence):
         self.deck_indices = np.arange(self.x_decks)
         self.pick_indices = np.arange(self.x_picks)
 
-        self.corr_batch_size = len(self.corr_indices) // self.num_batches
-        self.cube_batch_size = len(self.cubes) // self.num_batches
+        self.corr_batch_size = len(self.corr_indices) // self.num_batches * corr_multiplier
+        self.cube_batch_size = len(self.cubes) // self.num_batches * cube_multiplier
         self.deck_batch_size = len(self.decks) // self.num_batches
         self.pick_batch_size = len(self.picks) // self.num_batches
 
