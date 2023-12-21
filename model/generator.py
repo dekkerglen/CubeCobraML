@@ -32,15 +32,9 @@ class DataGenerator(Sequence):
         self.card_correlations_y = np.array(card_correlations).astype(np.uint)
         self.card_correlations_y = self.card_correlations_y.reshape((self.num_cards, self.num_cards))
 
-        for i in range(100):
-            print(i, self.card_correlations_y[i].sum())
-
         # Normalize each distribution
         epsilon = 1
         self.card_correlations_y = self.card_correlations_y / (self.card_correlations_y.sum(axis=1, keepdims=True) + epsilon)
-
-        for i in range(100):
-            print(i, self.card_correlations_y[i].sum())
 
         self.card_correlations_x = np.identity(self.num_cards)
 
@@ -79,7 +73,6 @@ class DataGenerator(Sequence):
             print("Loading {} of {} from {}".format(i, len(files), path))
             with open(os.path.join(path, file)) as f:
                 data += json.load(f)
-            break
         return np.array(data)    
     
     def __len__(self):
