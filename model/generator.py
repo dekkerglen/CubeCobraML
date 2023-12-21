@@ -112,17 +112,13 @@ class DataGenerator(Sequence):
         X_decks, y_decks = self.generate_decks(np.array(decks), self.batch_size)
         X_picks, y_picks = self.generate_picks(np.array(picks), self.batch_size)
 
-        corr_indeces = self.corr_indices[batch_number * self.batch_size:(batch_number + 1) * self.batch_size]
+        corr_start = (batch_number * self.batch_size) % self.num_cards
+        if corr_start + self.batch_size < self.num_cards:
+            corr_indeces = self.corr_indices[corr_start:corr_start+self.batch_size]
+        else:
+            corr_indeces = np.concatenate((self.corr_indices[corr_start:], self.corr_indices[:self.batch_size - (self.num_cards - corr_start)]))
         x_corr = self.card_correlations_x[corr_indeces]
         y_corr = self.card_correlations_y[corr_indeces]
-
-        # print sum accross first axis
-        print(x_corr.sum(axis=1))
-        print(y_corr.sum(axis=1))
-
-        # print the mean accross first axis
-        print(x_corr.mean(axis=1) * self.num_cards)
-        print(y_corr.mean(axis=1) * self.num_cards)
 
         return [[X_cubes, X_decks, X_picks, x_corr], [y_cubes, y_decks, y_picks, y_corr]]
         

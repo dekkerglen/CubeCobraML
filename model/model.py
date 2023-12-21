@@ -79,7 +79,7 @@ class CubeCobraMLSystem(Model):
             self.draft(inputs[2][0], inputs[2][1], training=training),
             self.correlate(inputs[3], training=training)
         ]
-
+ 
     def recommend(self, cubes, training=None):
         embedding = self.encoder(cubes, training=training)
         return self.cube_decoder(embedding, training=training)
