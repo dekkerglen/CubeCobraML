@@ -115,6 +115,14 @@ class DataGenerator(Sequence):
         x_corr = self.card_correlations_x[corr_indeces]
         y_corr = self.card_correlations_y[corr_indeces]
 
+        # print sum accross first axis
+        print(x_corr.sum(axis=1))
+        print(y_corr.sum(axis=1))
+
+        # print the mean accross first axis
+        print(x_corr.mean(axis=1) * self.num_cards)
+        print(y_corr.mean(axis=1) * self.num_cards)
+
         return [[X_cubes, X_decks, X_picks, x_corr], [y_cubes, y_decks, y_picks, y_corr]]
         
     def prep_next_epoch(self):
