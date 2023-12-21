@@ -11,7 +11,7 @@ class DataGenerator(Sequence):
         picks_path,
         freq_path,
         correlations_path,
-        batch_size=128,
+        num_batches=128,
         noise=0.2,
         noise_std=0.1,
     ):
@@ -23,7 +23,7 @@ class DataGenerator(Sequence):
         with open(correlations_path) as f:
             card_correlations = json.load(f)
 
-        self.batch_size = batch_size
+        self.num_batches = num_batches
         self.noise = noise
         self.noise_std = noise_std
         self.num_cards = len(card_freqs)
@@ -63,7 +63,15 @@ class DataGenerator(Sequence):
         self.deck_indices = np.arange(self.x_decks)
         self.pick_indices = np.arange(self.x_picks)
 
-        self.samples_per_epoch = max(self.x_cubes, self.x_decks, self.x_picks)
+        self.corr_batch_size = self.num_batches // len(self.corr_indices)
+        self.cube_batch_size = self.num_batches // len(self.cube_indices)
+        self.deck_batch_size = self.num_batches // len(self.deck_indices)
+        self.pick_batch_size = self.num_batches // len(self.pick_indices)
+
+        print("Cube Batch Size: {}".format(self.cube_batch_size))
+        print("Deck Batch Size: {}".format(self.deck_batch_size))
+        print("Pick Batch Size: {}".format(self.pick_batch_size))
+        print("Correlation Batch Size: {}".format(self.corr_batch_size))
         
         self.prep_next_epoch()
 
@@ -76,40 +84,40 @@ class DataGenerator(Sequence):
         return np.array(data)    
     
     def __len__(self):
-        return self.samples_per_epoch // self.batch_size
+        return self.num_batches
 
     def __getitem__(self, batch_number):
         # load those files
         cubes = []
-        cube_index = (batch_number * self.batch_size) % self.x_cubes
-        if cube_index + self.batch_size < self.x_cubes:
-            cubes = self.cubes[cube_index:cube_index+self.batch_size]
+        cube_index = (batch_number * self.cube_batch_size) % self.x_cubes
+        if cube_index + self.cube_batch_size < self.x_cubes:
+            cubes = self.cubes[cube_index:cube_index+self.cube_batch_size]
         else:
-            cubes = np.concatenate((self.cubes[cube_index:], self.cubes[:self.batch_size - (self.x_cubes - cube_index)]))
+            cubes = np.concatenate((self.cubes[cube_index:], self.cubes[:self.deck_batch_size - (self.x_cubes - cube_index)]))
         
         decks = []
-        deck_index = (batch_number * self.batch_size) % self.x_decks
-        if deck_index + self.batch_size < self.x_decks:
-            decks = self.decks[deck_index:deck_index+self.batch_size]
+        deck_index = (batch_number * self.deck_batch_size) % self.x_decks
+        if deck_index + self.deck_batch_size < self.x_decks:
+            decks = self.decks[deck_index:deck_index+self.deck_batch_size]
         else:
-            decks = np.concatenate((self.decks[deck_index:], self.decks[:self.batch_size - (self.x_decks - deck_index)]))
+            decks = np.concatenate((self.decks[deck_index:], self.decks[:self.deck_batch_size - (self.x_decks - deck_index)]))
 
         picks = []
-        pick_index = (batch_number * self.batch_size) % self.x_picks
-        if pick_index + self.batch_size < self.x_picks:
-            picks = self.picks[pick_index:pick_index+self.batch_size]
+        pick_index = (batch_number * self.pick_batch_size) % self.x_picks
+        if pick_index + self.pick_batch_size < self.x_picks:
+            picks = self.picks[pick_index:pick_index+self.pick_batch_size]
         else:
-            picks = np.concatenate((self.picks[pick_index:], self.picks[:self.batch_size - (self.x_picks - pick_index)]))
+            picks = np.concatenate((self.picks[pick_index:], self.picks[:self.pick_batch_size - (self.x_picks - pick_index)]))
 
-        X_cubes, y_cubes = self.generate_cubes(np.array(cubes), self.batch_size)
-        X_decks, y_decks = self.generate_decks(np.array(decks), self.batch_size)
-        X_picks, y_picks = self.generate_picks(np.array(picks), self.batch_size)
+        X_cubes, y_cubes = self.generate_cubes(np.array(cubes), self.cube_batch_size)
+        X_decks, y_decks = self.generate_decks(np.array(decks), self.deck_batch_size)
+        X_picks, y_picks = self.generate_picks(np.array(picks), self.pick_batch_size)
 
-        corr_start = (batch_number * self.batch_size) % self.num_cards
-        if corr_start + self.batch_size < self.num_cards:
-            corr_indeces = self.corr_indices[corr_start:corr_start+self.batch_size]
+        corr_start = (batch_number * self.corr_batch_size) % self.num_cards
+        if corr_start + self.corr_batch_size < self.num_cards:
+            corr_indeces = self.corr_indices[corr_start:corr_start+self.corr_batch_size]
         else:
-            corr_indeces = np.concatenate((self.corr_indices[corr_start:], self.corr_indices[:self.batch_size - (self.num_cards - corr_start)]))
+            corr_indeces = np.concatenate((self.corr_indices[corr_start:], self.corr_indices[:self.corr_batch_size - (self.num_cards - corr_start)]))
         x_corr = self.card_correlations_x[corr_indeces]
         y_corr = self.card_correlations_y[corr_indeces]
 
