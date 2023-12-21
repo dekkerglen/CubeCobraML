@@ -30,7 +30,7 @@ generator = DataGenerator(
     '{}picks/'.format(data_dir),
     '{}oracleFrequency.json'.format(data_dir),
     '{}correlations.json'.format(data_dir),
-    batch_size=batch_size,
+    num_batches=batch_size,
 )
 
 print('Creating Model...\n')
