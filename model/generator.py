@@ -115,7 +115,7 @@ class DataGenerator(Sequence):
         corr_indeces = self.corr_indices[batch_number * self.batch_size:(batch_number + 1) * self.batch_size]
         x_corr = self.card_correlations_x[corr_indeces]
         y_corr = self.card_correlations_y[corr_indeces]
-        
+
         return [[X_cubes, X_decks, X_picks, x_corr], [y_cubes, y_decks, y_picks, y_corr]]
         
     def prep_next_epoch(self):

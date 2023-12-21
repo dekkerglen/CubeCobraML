@@ -44,6 +44,24 @@ class Decoder(Model):
         print('Loading weights from ' + filename)
         self.model = keras.models.load_model(filename)
                 
+class RegularizationSystem(Model):
+    def __init__(self, num_cards):
+        super().__init__()
+        self.encoder = Encoder('encoder')
+        self.correlation_decoder = Decoder('correlate', num_cards, tf.nn.softmax)
+
+    def call(self, inputs, training=None):
+        embedding = self.encoder(inputs, training=training)
+        return self.correlation_decoder(embedding, training=training)
+    
+    def save_weights(self, filename):
+        self.encoder.save_weights(os.path.join(filename, "encoder", 'model'))
+        self.correlation_decoder.save_weights(os.path.join(filename, "correlation_decoder", 'model'))
+
+    def load_weights(self, filename):
+        self.encoder.load_weights(os.path.join(filename, "encoder", 'model'))
+        self.correlation_decoder.load_weights(os.path.join(filename, "correlation_decoder", 'model'))
+
 class CubeCobraMLSystem(Model):
     def __init__(self, num_cards):
         super().__init__()
