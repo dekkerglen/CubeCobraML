@@ -56,6 +56,9 @@ class DataGenerator(Sequence):
         x_corr = self.card_correlations_x[corr_indeces]
         y_corr = self.card_correlations_y[corr_indeces]
 
+        print(x_corr.shape)
+        print(y_corr.shape)
+
         return [x_corr, y_corr]
         
     def prep_next_epoch(self):

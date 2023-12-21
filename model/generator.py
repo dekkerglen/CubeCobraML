@@ -32,7 +32,6 @@ class DataGenerator(Sequence):
         self.card_correlations_y = np.array(card_correlations).astype(np.uint)
         self.card_correlations_y = self.card_correlations_y.reshape((self.num_cards, self.num_cards))
 
-
         for i in range(100):
             print(i, self.card_correlations_y[i].sum())
 
