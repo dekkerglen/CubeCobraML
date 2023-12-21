@@ -63,10 +63,10 @@ class DataGenerator(Sequence):
         self.deck_indices = np.arange(self.x_decks)
         self.pick_indices = np.arange(self.x_picks)
 
-        self.corr_batch_size = self.num_batches // len(self.corr_indices)
-        self.cube_batch_size = self.num_batches // len(self.cube_indices)
-        self.deck_batch_size = self.num_batches // len(self.deck_indices)
-        self.pick_batch_size = self.num_batches // len(self.pick_indices)
+        self.corr_batch_size = len(self.corr_indices) // self.num_batches
+        self.cube_batch_size = len(self.cubes) // self.num_batches
+        self.deck_batch_size = len(self.decks) // self.num_batches
+        self.pick_batch_size = len(self.picks) // self.num_batches
 
         print("Cube Batch Size: {}".format(self.cube_batch_size))
         print("Deck Batch Size: {}".format(self.deck_batch_size))
