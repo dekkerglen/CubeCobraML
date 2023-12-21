@@ -79,6 +79,7 @@ class DataGenerator(Sequence):
             print("Loading {} of {} from {}".format(i, len(files), path))
             with open(os.path.join(path, file)) as f:
                 data += json.load(f)
+            break
         return np.array(data)    
     
     def __len__(self):
