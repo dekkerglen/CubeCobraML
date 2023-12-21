@@ -72,6 +72,7 @@ class CubeCobraMLSystem(Model):
         self.correlation_decoder = Decoder('correlate', num_cards, tf.nn.softmax)
 
     # inputs is [[cubes], [decks], [[packs], [pools]], [cards]]
+    @tf.function
     def call(self, inputs, training=None):
         return [
             self.recommend(inputs[0], training=training),
@@ -80,20 +81,24 @@ class CubeCobraMLSystem(Model):
             self.correlate(inputs[3], training=training)
         ]
  
+    @tf.function
     def recommend(self, cubes, training=None):
         embedding = self.encoder(cubes, training=training)
         return self.cube_decoder(embedding, training=training)
     
+    @tf.function
     def deck_build(self, pools, training=None):
         embedding = self.encoder(pools, training=training)
         return self.deck_build_decoder(embedding, training=training)
 
+    @tf.function
     def draft(self, pools, packs, training=None):
         embedding = self.encoder(pools, training=training)
         best_possible_picks = self.draft_decoder(embedding, training=training)
         mask = 1e9 * (1-packs)
         return tf.nn.softmax(best_possible_picks * packs - mask)
     
+    @tf.function
     def correlate(self, inputs, training=None):
         embedding = self.encoder(inputs, training=training)
         return self.correlation_decoder(embedding, training=training)
