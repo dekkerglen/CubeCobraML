@@ -37,7 +37,8 @@ class DataGenerator(Sequence):
             print(i, self.card_correlations_y[i].sum())
 
         # Normalize each distribution
-        self.card_correlations_y = self.card_correlations_y / self.card_correlations_y.sum(axis=1, keepdims=True)
+        epsilon = 1
+        self.card_correlations_y = self.card_correlations_y / (self.card_correlations_y.sum(axis=1, keepdims=True) + epsilon)
 
         for i in range(100):
             print(i, self.card_correlations_y[i].sum())
