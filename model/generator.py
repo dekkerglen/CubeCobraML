@@ -9,22 +9,39 @@ class DataGenerator(Sequence):
         cubes_path,
         decks_path,
         picks_path,
-        metadata_path,
-        card_freqs,
-        card_correlations,
+        freq_path,
+        correlations_path,
         batch_size=128,
         noise=0.2,
         noise_std=0.1,
     ):
         super().__init__()
+
+        print('Loading Data...\n')
+        with open(freq_path) as f:
+            card_freqs = json.load(f)
+        with open(correlations_path) as f:
+            card_correlations = json.load(f)
+
         self.batch_size = batch_size
         self.noise = noise
         self.noise_std = noise_std
         self.num_cards = len(card_freqs)
 
         # card_correlations is stored in 1d format, but we need it in 2d format based on num_cards x num_cards
-        self.card_correlations_y = np.array(card_correlations)
+        self.card_correlations_y = np.array(card_correlations).astype(np.uint)
         self.card_correlations_y = self.card_correlations_y.reshape((self.num_cards, self.num_cards))
+
+
+        for i in range(100):
+            print(i, self.card_correlations_y[i].sum())
+
+        # Normalize each distribution
+        self.card_correlations_y = self.card_correlations_y / self.card_correlations_y.sum(axis=1, keepdims=True)
+
+        for i in range(100):
+            print(i, self.card_correlations_y[i].sum())
+
         self.card_correlations_x = np.identity(self.num_cards)
 
         # inverse of card frequency

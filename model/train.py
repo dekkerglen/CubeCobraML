@@ -20,11 +20,6 @@ loss_weights = float(params[3])
 data_dir = '../data/train/'
 model_dir = './model/'
 
-print('Loading Data...\n')
-with open(os.path.join(data_dir, 'oracleFrequency.json')) as f:
-    card_freqs = json.load(f)
-with open(os.path.join(data_dir, 'correlations.json')) as f:
-    card_correlations = json.load(f)
     
 print('Creating Data Generator...\n')
 
@@ -33,15 +28,14 @@ generator = DataGenerator(
     '{}cubes/'.format(data_dir),
     '{}decks/'.format(data_dir),
     '{}picks/'.format(data_dir),
-    '{}metadata.json'.format(data_dir),
-    card_freqs,
-    card_correlations,
+    '{}oracleFrequency.json'.format(data_dir),
+    '{}correlations.json'.format(data_dir),
     batch_size=batch_size,
 )
 
 print('Creating Model...\n')
 
-model = CubeCobraMLSystem(len(card_freqs))
+model = CubeCobraMLSystem(generator.num_cards)
 
 model.compile(
     optimizer='adam',

@@ -54,15 +54,10 @@ function writeLargeArray(filepath, arr) {
 
   for (let i = 0; i < arr.length; i += batchSize) {
 
-    const slice = arr.slice(i, i + batchSize);
+    const slice = Array.from(arr.slice(i, i + batchSize));
 
     // need to make sure this is a list, not a weird map
-    const serialized = JSON.stringify(slice, (k, v) => {
-      if (v instanceof  Int32Array) {
-          return Array.apply([], v);
-      }
-      return v;
-    });
+    const serialized = JSON.stringify(slice);
 
     // trim the brackets
     fs.writeSync(fd, serialized.substring(1, serialized.length - 1));
@@ -137,7 +132,7 @@ const processDecks = (oracleCount) => {
 
   let numDecks = 0;
 
-  const correlations = new Int32Array(oracleCount * oracleCount);
+  const correlations = new Int32Array(oracleCount * oracleCount).fill(0);
 
   // enumurate src/decks
   const deckFiles = fs.readdirSync(`${sourceDir}/decks`);
@@ -352,14 +347,16 @@ const run =  () => {
 
   metadata.numOracles = processOracleDict();
 
-  console.log('Processing cubes...');
-  metadata.numCubes = processCubes(metadata.numOracles);
+  console.log("We have " + metadata.numOracles + " oracles.")
+
+  // console.log('Processing cubes...');
+  // metadata.numCubes = processCubes(metadata.numOracles);
 
   console.log('Processing decks...');
   metadata.numDecks = processDecks(metadata.numOracles);
 
-  console.log('Processing picks...');
-  metadata.numPicks = processPicks(metadata.numOracles);
+  // console.log('Processing picks...');
+  // metadata.numPicks = processPicks(metadata.numOracles);
 
   fs.writeFileSync(`${trainDir}/metadata.json`, JSON.stringify(metadata));
 
