@@ -4,7 +4,7 @@ const sourceDir = 'raw_data';
 const trainDir = 'data/train';
 const testDir = 'data/test';
 
-const TEST_PERCENT = 0.1;
+const TEST_PERCENT = 0.0;
 const WRITE_BATCH_SIZE = 10000;
 
 const ensureDir = (dir) => {

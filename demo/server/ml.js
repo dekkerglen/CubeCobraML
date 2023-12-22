@@ -135,7 +135,6 @@ const deckbuild = (oracles) => {
   }
 }
 
-
 const draft = (pack, pool) => {
   const vector = [encodeIndeces(pool.map(oracle => oracleToIndex[oracle]))]; 
   const tensor = tf.tensor(vector);
@@ -162,12 +161,19 @@ const draft = (pack, pool) => {
     }
   }
   
-
   return res.sort((a, b) => b.rating - a.rating);
-} 
+}
+
+const encode = (one_hot_encodings) => {
+  return tf.tidy(() => {
+    const tensor = tf.tensor(one_hot_encodings);
+    return encoder.predict(tensor).arraySync();
+  });
+};
 
 module.exports = {
   recommend,
   deckbuild,
-  draft
+  draft,
+  encode
 }
