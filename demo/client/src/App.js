@@ -1,15 +1,15 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 import { useState } from 'react';
-import { Card, CardBody, Container, Nav, NavItem, NavLink } from 'reactstrap'
+import { Card, CardBody, Nav, NavItem, NavLink } from 'reactstrap'
 
 import BuildPage from './components/BuildPage';
 import DraftPage from './components/DraftPage';
 import RecommendPage from './components/RecommendPage';
+import SynergyPage from './components/SynergyPage';
 
 function App() {
   const [tab, setTab] = useState(0);
-
 
   return (
     <Card className="m-4">
@@ -23,11 +23,15 @@ function App() {
         <NavItem>
           <NavLink href="#" active={tab === 2} onClick={() => setTab(2)}>Draft</NavLink>
         </NavItem>
+        <NavItem>
+          <NavLink href="#" active={tab === 3} onClick={() => setTab(3)}>Synergy</NavLink>
+        </NavItem>
       </Nav>
       <CardBody>
         {tab === 0 && <RecommendPage />}
         {tab === 1 && <BuildPage />}
         {tab === 2 && <DraftPage />}
+        {tab === 3 && <SynergyPage />}
       </CardBody>
     </Card>
   );

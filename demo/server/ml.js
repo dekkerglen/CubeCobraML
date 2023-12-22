@@ -41,6 +41,7 @@ tf.loadGraphModel('file://../../model/tfjs_model/draft_decoder/model.json').then
   console.log(err);
 });
 
+const embeddings = JSON.parse(fs.readFileSync("embeddings.json"));
 
 const softmax = (array) => {
   const max = Math.max(...array);
@@ -171,9 +172,37 @@ const encode = (one_hot_encodings) => {
   });
 };
 
+const cosineSimilarity = (a, magA, b, magB) => {
+  const dotProduct = a.reduce((acc, val, index) => acc + val * b[index], 0);
+  return dotProduct / (magA * magB);
+};
+
+const synergies = (oracle) => {
+  const currentEmbedding = embeddings[oracleToIndex[oracle]];
+  const currentMagnitude = Math.sqrt(currentEmbedding.reduce((acc, val) => acc + val * val, 0));
+
+  const res = [];
+
+  for (let i = 0; i < numOracles; i++) {
+    const oracle = indexToOracle[i];
+    const embedding = embeddings[i];
+    const magnitude = Math.sqrt(embedding.reduce((acc, val) => acc + val * val, 0));
+
+    const rating = cosineSimilarity(currentEmbedding, currentMagnitude, embedding, magnitude);
+
+    res.push({
+      oracle,
+      rating
+    });
+  }
+
+  return res.sort((a, b) => b.rating - a.rating).slice(1, 101);
+}
+
 module.exports = {
   recommend,
   deckbuild,
   draft,
-  encode
+  encode,
+  synergies
 }

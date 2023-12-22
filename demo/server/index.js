@@ -87,6 +87,22 @@ app.post("/api/draft", (req, res) => {
   });
 });
 
+app.post("/api/synergies", (req, res) => {
+  console.log(req.body);
+
+  const { card } = req.body;
+
+  const oracle = oracleByName[card.toLowerCase()];
+
+  const recommendations = ml.synergies(oracle);
+
+  res.json({
+    cards: recommendations.map((card) => ({
+      ...cardDict[card.oracle],
+      rating: card.rating
+    }))
+  });
+});
 
 app.listen(PORT, () => {
   console.log(`Server listening on ${PORT}`);
