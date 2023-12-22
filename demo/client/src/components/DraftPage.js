@@ -1,11 +1,11 @@
 import { useCallback, useState } from 'react';
 import { Row, Col, Button, Card, CardBody } from 'reactstrap';
 import CardItem from './CardItem';
-
+import useLocalStorage from './hooks/useLocalStorage';
 
 function DraftPage() {
-  const [packText, setPackText] = useState('');
-  const [poolText, setPoolText] = useState('');
+  const [packText, setPackText] = useLocalStorage('packinput', '');
+  const [poolText, setPoolText] = useLocalStorage('poolinput', '');
   const [pack, setPack] = useState([]);
   const [pool, setPool] = useState([]);
   const [picks, setPicks] = useState([]);

@@ -1,9 +1,10 @@
 import { useCallback, useState } from 'react';
 import { Row, Col, Button, Card, CardBody } from 'reactstrap';
 import CardItem from './CardItem';
+import useLocalStorage from './hooks/useLocalStorage';
 
 function BuildPage() {
-  const [cards, setCards] = useState('');
+  const [cards, setCards] = useLocalStorage('buildinput', '');
   const [pool, setPool] = useState([]);
   const [mainboard, setMainboard] = useState([]);
   const [sideboard, setSideboard] = useState([]);

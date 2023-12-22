@@ -1,9 +1,10 @@
 import { useCallback, useState } from 'react';
 import { Row, Col, Button, Card, CardBody } from 'reactstrap';
 import CardItem from './CardItem';
+import useLocalStorage from './hooks/useLocalStorage';
 
 function RecommendPage() {
-  const [cards, setCards] = useState('');
+  const [cards, setCards] = useLocalStorage('recommendinput', '');
   const [cube, setCube] = useState([]);
   const [adds, setAdds] = useState([]);
   const [removes, setRemoves] = useState([]);
