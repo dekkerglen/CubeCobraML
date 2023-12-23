@@ -41,7 +41,15 @@ model.compile(
     optimizer='adam',
     loss=['binary_crossentropy', 'binary_crossentropy', 'categorical_crossentropy', 'kullback_leibler_divergence'],
     loss_weights=[loss_weights, loss_weights, loss_weights, loss_weights],
-    metrics={'output_1': 'accuracy', 'output_2': 'accuracy',  'output_3': [TopKCategoricalAccuracy(k=1, name="top1"), TopKCategoricalAccuracy(k=3, name="top3")] , 'output_4': 'accuracy' }
+    metrics={
+        'output_1': 'accuracy',
+        'output_2': 'accuracy',
+        'output_3': [
+            TopKCategoricalAccuracy(k=1, name="top1"),
+            TopKCategoricalAccuracy(k=3, name="top3")
+        ],
+        'output_4': 'accuracy'
+    }
 )
 # top_k_categorical_accuracy
 
