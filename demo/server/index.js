@@ -87,6 +87,21 @@ app.post("/api/draft", (req, res) => {
   });
 });
 
+app.post("/api/rotodraft", (req, res) => {
+  const { pack, pool } = req.body;
+
+  const poolOracles = pool.filter(card => card.toLowerCase() in oracleByName).map(card => oracleByName[card.toLowerCase()]);
+
+  const recommendations = ml.rotodraft(poolOracles, 250);
+
+  res.json({
+    picks: recommendations.map((card) => ({
+      ...cardDict[card.oracle],
+      rating: card.rating
+    }))
+  });
+});
+
 app.post("/api/synergies", (req, res) => {
   console.log(req.body);
 

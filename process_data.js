@@ -243,6 +243,10 @@ const processPicks =  (numOracles) => {
     numPicks += train.length;
 
     if (train.length > 0) {
+      if (trainSize > 0) {
+        fs.writeFileSync(trainFile, ',');
+      }
+
       if (trainSize + train.length > WRITE_BATCH_SIZE) {
         const toAppendSerialized = JSON.stringify(train.slice(0, WRITE_BATCH_SIZE - trainSize));
         const toWrite = train.slice(WRITE_BATCH_SIZE - trainSize);
@@ -256,18 +260,12 @@ const processPicks =  (numOracles) => {
         fs.writeFileSync(trainFile, toWriteSerialized.substring(1, toWriteSerialized.length - 1));
         trainSize = toWrite.length;
 
-        if (trainSize < WRITE_BATCH_SIZE) {
-          fs.writeFileSync(trainFile, ',');
-        }
+
       } else {
         const serialized = JSON.stringify(train);
 
         fs.writeFileSync(trainFile, serialized.substring(1, serialized.length - 1));
         trainSize += train.length;
-
-        if (trainSize < WRITE_BATCH_SIZE) {
-          fs.writeFileSync(trainFile, ',');
-        }
       }
     }
     
@@ -352,11 +350,11 @@ const run =  () => {
   // console.log('Processing cubes...');
   // metadata.numCubes = processCubes(metadata.numOracles);
 
-  console.log('Processing decks...');
-  metadata.numDecks = processDecks(metadata.numOracles);
+  // console.log('Processing decks...');
+  // metadata.numDecks = processDecks(metadata.numOracles);
 
-  // console.log('Processing picks...');
-  // metadata.numPicks = processPicks(metadata.numOracles);
+  console.log('Processing picks...');
+  metadata.numPicks = processPicks(metadata.numOracles);
 
   fs.writeFileSync(`${trainDir}/metadata.json`, JSON.stringify(metadata));
 

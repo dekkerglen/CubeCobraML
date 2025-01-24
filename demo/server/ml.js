@@ -165,6 +165,30 @@ const draft = (pack, pool) => {
   return res.sort((a, b) => b.rating - a.rating);
 }
 
+
+const rotodraft = (pool, picks) => {
+  const vector = [encodeIndeces(pool.map(oracle => oracleToIndex[oracle]))]; 
+  const tensor = tf.tensor(vector);
+
+  const encoded = encoder.predict(tensor);
+  const recommendations = draft_decoder.predict([encoded]);
+
+  const array = recommendations.dataSync();
+  
+  const res = [];
+
+  for (let i = 0; i < numOracles; i++) {
+    if (!pool.includes(indexToOracle[i])) {
+      res.push({
+        oracle: indexToOracle[i],
+        rating: array[i]
+      });
+    }
+  }
+  
+  return res.sort((a, b) => b.rating - a.rating).slice(0, picks);
+}
+
 const encode = (one_hot_encodings) => {
   return tf.tidy(() => {
     const tensor = tf.tensor(one_hot_encodings);
@@ -204,5 +228,6 @@ module.exports = {
   deckbuild,
   draft,
   encode,
-  synergies
+  synergies,
+  rotodraft
 }

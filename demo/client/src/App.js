@@ -7,6 +7,7 @@ import BuildPage from './components/BuildPage';
 import DraftPage from './components/DraftPage';
 import RecommendPage from './components/RecommendPage';
 import SynergyPage from './components/SynergyPage';
+import RotoDraftPage from './components/RotoDraftPage';
 
 function App() {
   const [tab, setTab] = useState(0);
@@ -24,14 +25,18 @@ function App() {
           <NavLink href="#" active={tab === 2} onClick={() => setTab(2)}>Draft</NavLink>
         </NavItem>
         <NavItem>
-          <NavLink href="#" active={tab === 3} onClick={() => setTab(3)}>Synergy</NavLink>
+          <NavLink href="#" active={tab === 3} onClick={() => setTab(3)}>Roto Draft</NavLink>
+        </NavItem>
+        <NavItem>
+          <NavLink href="#" active={tab === 4} onClick={() => setTab(4)}>Synergy</NavLink>
         </NavItem>
       </Nav>
       <CardBody>
         {tab === 0 && <RecommendPage />}
         {tab === 1 && <BuildPage />}
         {tab === 2 && <DraftPage />}
-        {tab === 3 && <SynergyPage />}
+        {tab === 3 && <RotoDraftPage />}
+        {tab === 4 && <SynergyPage />}
       </CardBody>
     </Card>
   );

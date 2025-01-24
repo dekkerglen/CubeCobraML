@@ -80,7 +80,7 @@ class DataGenerator(Sequence):
     def load_all(self, files, path):
         data = []
         for file, i in zip(files, range(len(files))):
-            print("Loading {} of {} from {}".format(i, len(files), path))
+            print("Loading {} of {} from {}: {}".format(i, len(files), path, file))
             with open(os.path.join(path, file)) as f:
                 data += json.load(f)
         return np.array(data)    
