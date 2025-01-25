@@ -15,7 +15,7 @@ class DataGenerator(Sequence):
         noise=0.2,
         noise_std=0.1,
         corr_multiplier=32, # loop through correlations 32 times per epoch
-        cube_multiplier=8, # loop through cubes 8 times per epoch
+        cube_multiplier=64, # loop through cubes 8 times per epoch
     ):
         super().__init__()
 
