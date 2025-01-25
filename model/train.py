@@ -1,6 +1,6 @@
 from model import CubeCobraMLSystem
 import tensorflow as tf
-from generator import DataGenerator
+from generator_disk import DataGenerator
 import numpy as np
 import json
 import os

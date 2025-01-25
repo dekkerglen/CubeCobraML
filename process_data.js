@@ -247,7 +247,7 @@ const processPicks =  (numOracles) => {
         fs.writeFileSync(trainFile, ',');
       }
 
-      if (trainSize + train.length > WRITE_BATCH_SIZE) {
+      if (trainSize + train.length >= WRITE_BATCH_SIZE) {
         const toAppendSerialized = JSON.stringify(train.slice(0, WRITE_BATCH_SIZE - trainSize));
         const toWrite = train.slice(WRITE_BATCH_SIZE - trainSize);
         const toWriteSerialized = JSON.stringify(toWrite);        
