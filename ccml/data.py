@@ -250,7 +250,7 @@ def build_dataset(
     cube_ds = _prepare_stream(cube_ds_raw, counts["cube"], batch_size, steps_per_epoch, epochs)
     deck_ds = _prepare_stream(deck_ds_raw, counts["deck"], batch_size, steps_per_epoch, epochs)
     pick_ds = _prepare_stream(pick_ds_raw, counts["pick"], batch_size, steps_per_epoch, epochs)
-    corr_ds = _prepare_stream(corr_ds_raw, counts["corr"], batch_size, steps_per_epoch, epochs)
+    corr_ds = _prepare_stream(corr_ds_raw, counts["card"], batch_size, steps_per_epoch, epochs)
 
     def _merge(cube, deck, pick, corr):
         x_cube, y_cube = cube
