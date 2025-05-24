@@ -177,7 +177,7 @@ def build_dataset(
     noise: float = 0.20,
     noise_std: float = 0.1,
 ):
-    """Returns `(dataset, num_cards)` ready for `model.fit()`."""
+    """Creates and returns all information needed to train the model."""
     card_freqs = json.load(open(freq_path))
     num_cards = len(card_freqs)
     neg_sampler = np.array([1.0 / (f + 1) for f in card_freqs], dtype=np.float32)
