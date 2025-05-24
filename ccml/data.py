@@ -14,32 +14,44 @@ Every element is:
       y_corr])
 """
 
-from __future__ import annotations
-
 import json
 import os
-from typing import Iterator, List, Tuple
+from typing import Iterator
 
 import numpy as np
 import tensorflow as tf
 
 
-# --------------------------------------------------------------------- util
-def _one_hot(indices: List[int], num_cards: int) -> np.ndarray:
+def _create_array_representation(indices: list[int], num_cards: int) -> np.ndarray:
     vec = np.zeros(num_cards, dtype=np.float32)
     vec[indices] = 1.0
     return vec
 
 
-# ----------------------------- cube augmentation (old generate_cubes logic)
 def _augment_cube(
-    indices: List[int],
+    indices: list[int],
     num_cards: int,
     neg_sampler: np.ndarray,
     noise: float,
     noise_std: float,
-) -> Tuple[np.ndarray, np.ndarray]:
-    cube = _one_hot(indices, num_cards)
+) -> tuple[np.ndarray, np.ndarray]:
+    """create a vector representation of the cube alongside a noisy version for the recsys
+
+    Args:
+        indices: the indices of the cards in this particular cube
+        num_cards: the number of total cards that exist on the date of training
+        neg_sampler: probabilities such that when we fake add cards to the cube, we more often
+            add popular cards. This is what prevents the model from learning to always add
+            popular cards because we give it a bunch of examples of removing them.
+        noise: the average percent of cards in the cube to have be fake
+        noise_std: the standard deviation of the noise, so the recsys can't determine a fixed
+            amount of cards to remove.
+
+    Returns:
+        x_cube: the cube with some cards removed and some added
+        y_cube: a subset of the original cube list, where 25% of the cards removed from x_cube are also removed.
+    """
+    cube = _create_array_representation(indices, num_cards)
 
     includes = np.array(indices, dtype=np.int32)
     size = len(includes)
@@ -57,24 +69,31 @@ def _augment_cube(
     probs = neg_sampler[excludes] / neg_sampler[excludes].sum()
     flip_exclude = np.random.choice(excludes, flip_amount, p=probs, replace=False)
 
-    y_flip_include = np.random.choice(flip_include, flip_amount // 4, replace=False)
-
     x_cube, y_cube = cube.copy(), cube.copy()
     x_cube[flip_include] = 0.0  # cut
     x_cube[flip_exclude] = 1.0  # add
-    y_cube[y_flip_include] = 0.0  # supervision
+    # what this does is select a random 25 percent of the cards that were cut and also
+    # remove them from the y_cube representation. I honestly don't remembery why I (@RyanSaxe)
+    # did this originally. I think maybe there were some benefits of not always having the
+    # the same exact y_cube representation to prevent overfitting. You could experiment
+    # with removing this line and seeing if it helps or hurts the model.
+    y_flip_include = np.random.choice(flip_include, flip_amount // 4, replace=False)
+    y_cube[y_flip_include] = 0.0
 
     return x_cube, y_cube
 
 
-# ----------------------------------------------------------------- streams
+# -----------------------------------------------Stream Functions-----------------------------------------------
+# These functions are used to stream data from disk to avoid materializing large matrices in RAM.
+
+
 def _cube_stream(
-    files: List[str],
+    files: list[str],
     num_cards: int,
     neg_sampler: np.ndarray,
     noise: float,
     noise_std: float,
-) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
+) -> Iterator[tuple[np.ndarray, np.ndarray]]:
     while True:
         np.random.shuffle(files)
         for fname in files:
@@ -83,33 +102,33 @@ def _cube_stream(
 
 
 def _deck_stream(
-    files: List[str], num_cards: int
-) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
+    files: list[str], num_cards: int
+) -> Iterator[tuple[np.ndarray, np.ndarray]]:
     while True:
         np.random.shuffle(files)
         for fname in files:
             for rec in json.load(open(fname)):
-                main = _one_hot(rec["mainboard"], num_cards)
-                side = _one_hot(rec["sideboard"], num_cards)
+                main = _create_array_representation(rec["mainboard"], num_cards)
+                side = _create_array_representation(rec["sideboard"], num_cards)
                 yield np.clip(main + side, 0.0, 1.0), main
 
 
 def _pick_stream(
-    files: List[str], num_cards: int
-) -> Iterator[Tuple[Tuple[np.ndarray, np.ndarray], np.ndarray]]:
+    files: list[str], num_cards: int
+) -> Iterator[tuple[tuple[np.ndarray, np.ndarray], np.ndarray]]:
     while True:
         np.random.shuffle(files)
         for fname in files:
             for rec in json.load(open(fname)):
-                pool = _one_hot(rec["pool"], num_cards)
-                pack = _one_hot(rec["pack"], num_cards)
-                pick = _one_hot([rec["pick"]], num_cards)
+                pool = _create_array_representation(rec["pool"], num_cards)
+                pack = _create_array_representation(rec["pack"], num_cards)
+                pick = _create_array_representation([rec["pick"]], num_cards)
                 yield (pool, pack), pick
 
 
 def _corr_stream(
     x_eye: np.ndarray, y_softmax: np.ndarray
-) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
+) -> Iterator[tuple[np.ndarray, np.ndarray]]:
     rows = x_eye.shape[0]
     while True:
         for i in np.random.permutation(rows):
