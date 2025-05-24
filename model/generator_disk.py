@@ -25,7 +25,7 @@ class DataGenerator(Sequence):
         with open(correlations_path) as f:
             card_correlations = json.load(f)
 
-        self.num_batches = num_batches
+        self.n_batches = num_batches
         self.noise = noise
         self.noise_std = noise_std
         self.num_cards = len(card_freqs)
@@ -61,10 +61,11 @@ class DataGenerator(Sequence):
         self.deck_indices = np.arange(self.x_decks)
         self.pick_indices = np.arange(self.x_picks)
 
-        self.corr_batch_size = (len(self.corr_indices) * corr_multiplier)// self.num_batches 
-        self.cube_batch_size = (len(self.x_cubes_files) * cube_multiplier) // self.num_batches
-        self.deck_batch_size = len(self.x_decks_files) // self.num_batches
-        self.pick_batch_size = len(self.x_picks_files) // self.num_batches
+        # TODO: clean this up, either by having way more files or figuring out a simpler equation
+        self.corr_batch_size = 128 # (len(self.corr_indices) * corr_multiplier)// self.n_batches 
+        self.cube_batch_size = 1# (len(self.x_cubes_files) * cube_multiplier) // self.n_batches
+        self.deck_batch_size = 4# len(self.x_decks_files) // self.n_batches
+        self.pick_batch_size = 128# len(self.x_picks_files) // self.n_batches
 
         print("Cube Batch Size: {}, for {} cubes".format(self.cube_batch_size, len(self.x_cubes_files)))
         print("Deck Batch Size: {}, for {} decks".format(self.deck_batch_size, len(self.x_picks_files)))
@@ -73,6 +74,12 @@ class DataGenerator(Sequence):
         
         self.prep_next_epoch()
 
+    def create_one_hot_mtx(self, indices: list[list[int]]):
+        mtx = np.zeros((len(indices), self.num_cards))
+        for i, index in enumerate(indices):
+            mtx[i, index] = 1
+        return mtx
+
     def load_all(self, files, path):
         for file, i in zip(files, range(len(files))):
             print("Loading {} of {} from {}: {}".format(i, len(files), path, file))
@@ -80,7 +87,7 @@ class DataGenerator(Sequence):
                 yield json.load(f)
     
     def __len__(self):
-        return self.num_batches
+        return self.n_batches
 
     def __getitem__(self, batch_number):
         # load those files
@@ -99,9 +106,9 @@ class DataGenerator(Sequence):
         for i in range(pick_index, pick_index + self.pick_batch_size):
             picks.extend(next(self.load_all([self.x_picks_files[i % self.x_picks]], self.picks_path)))
 
-        X_cubes, y_cubes = self.generate_cubes(np.array(cubes), self.cube_batch_size)
-        X_decks, y_decks = self.generate_decks(np.array(decks), self.deck_batch_size)
-        X_picks, y_picks = self.generate_picks(np.array(picks), self.pick_batch_size)
+        X_cubes, y_cubes = self.generate_cubes(cubes)
+        X_decks, y_decks = self.generate_decks(decks)
+        X_picks, y_picks = self.generate_picks(picks)
 
         corr_start = (batch_number * self.corr_batch_size) % self.num_cards
         if corr_start + self.corr_batch_size < self.num_cards:
@@ -123,14 +130,16 @@ class DataGenerator(Sequence):
     def on_epoch_end(self):
         self.prep_next_epoch()
 
-    def to_vector_encoding(self, indices, batch_size):
+    def to_vector_encoding(self, indices):
+        batch_size = len(indices)
         vec = np.zeros((batch_size,self.num_cards))
         for i,index in enumerate(indices):
             vec[i,index] = 1
         return vec
 
-    def generate_cubes(self, raw_cubes, batch_size):
-        cubes = self.to_vector_encoding(raw_cubes, batch_size)
+    def generate_cubes(self, raw_cubes):
+        batch_size = len(raw_cubes)
+        cubes = self.to_vector_encoding(raw_cubes)
 
         cut_mask = np.zeros((batch_size,self.num_cards))
         add_mask = np.zeros((batch_size,self.num_cards))
@@ -162,41 +171,20 @@ class DataGenerator(Sequence):
 
         return [x_cubes, y_cubes]
     
-    
-    def encode_deck(self, mainboards, batch_size):
-        vec = np.zeros((batch_size,self.num_cards))
-        for i,mainboard in enumerate(mainboards):
-            for index in mainboard:
-                vec[i,index] = 1
-        return vec
-    
-    def encode_pool(self, mainboards, sideboards, batch_size):       
-        vec = np.zeros((batch_size, self.num_cards))
-        for i,mainboard in enumerate(mainboards):
-            for index in mainboard:
-                vec[i,index] = 1
-        for i,sideboard in enumerate(sideboards):
-            for index in sideboard:
-                vec[i,index] = 1
-        return vec
-
     # decks have mainboard, sideboard, basics
-    def generate_decks(self, decks, batch_size):        
-        mainboards = np.array(list(map(lambda x: x['mainboard'], decks)))
-        sideboards = np.array(list(map(lambda x: x['sideboard'], decks)))
+    def generate_decks(self, decks):        
+        mainboards = self.to_vector_encoding(list(map(lambda x: x['mainboard'], decks)))
+        sideboards = self.to_vector_encoding(list(map(lambda x: x['sideboard'], decks)))
 
-        x = self.encode_pool(mainboards, sideboards, batch_size)
-        y = self.encode_deck(mainboards, batch_size)
+        x = np.clip(mainboards + sideboards, 0, 1)
+        y = mainboards
 
         return [x, y]
     
-    def generate_picks(self, picks, batch_size):        
-        pools = np.array(list(map(lambda x: x['pool'], picks)))
-        packs = np.array(list(map(lambda x: x['pack'], picks)))
-        pick = np.array(list(map(lambda x: [x['pick']], picks)))
+    def generate_picks(self, picks):     
+        batch_size = len(picks)   
+        pools = self.to_vector_encoding(list(map(lambda x: x['pool'], picks)))
+        packs = self.to_vector_encoding(list(map(lambda x: x['pack'], picks)))
+        pick = self.to_vector_encoding(list(map(lambda x: [x['pick']], picks)))
 
-        x_pool = self.to_vector_encoding(pools, batch_size)
-        x_pack = self.to_vector_encoding(packs, batch_size)
-        y_pick = self.to_vector_encoding(pick, batch_size)
-
-        return [[x_pool, x_pack], y_pick]
+        return [[pools, packs], pick]
