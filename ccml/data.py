@@ -207,7 +207,7 @@ def build_dataset(
     if epochs > target_epochs:
         print(f"[info] Asked for {target_epochs} epochs but {epochs} needed to see every dataset once.")
 
-    print("Calculated epoch size: {steps_per_epoch} steps with batch_size = {batch_size}")
+    print(f"Calculated epoch size: {steps_per_epoch} steps with batch_size = {batch_size}")
     print("Total examples in each dataset:")
     for k, v in counts.items():
         print(f"{k}: {humanize_number(v)}")
