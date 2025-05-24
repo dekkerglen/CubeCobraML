@@ -2,6 +2,6 @@ data
 raw_data
 node_modules
 model/__pycache__
-__pycache__
+ccml/__pycache__
 .venv
 .env
