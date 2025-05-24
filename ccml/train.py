@@ -17,15 +17,17 @@ DATA_DIR = DATA_DIR / "train"
 epochs = int(sys.argv[1])
 batch_size = int(sys.argv[2])
 continue_flag = sys.argv[3].lower() == "true"
-
+primary_stream = sys.argv[4].lower()
 # ----------------------------------------------------------- data pipeline
-dataset, num_cards, steps_per_epoch = build_dataset(
+dataset, num_cards, steps_per_epoch, epochs_final = build_dataset(
     cubes_path=os.path.join(DATA_DIR, "cubes"),
     decks_path=os.path.join(DATA_DIR, "decks"),
     picks_path=os.path.join(DATA_DIR, "picks"),
     freq_path=os.path.join(DATA_DIR, "oracleFrequency.json"),
     correlations_path=os.path.join(DATA_DIR, "correlations.json"),
     batch_size=batch_size,
+    target_epochs=epochs,
+    primary=primary_stream,
 )
 
 # --------------------------------------------------------------- model

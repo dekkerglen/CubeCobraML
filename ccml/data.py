@@ -17,11 +17,13 @@ Every element is:
 import json
 import math
 import os
-from typing import Iterator
+from typing import Iterator, Literal
 
 import numpy as np
 import tensorflow as tf
 from tqdm.auto import tqdm
+
+from ccml.utils import humanize_number
 
 
 def _count_records(files: list[str]) -> int:
@@ -147,14 +149,31 @@ def _corr_stream(x_eye: np.ndarray, y_softmax: np.ndarray) -> Iterator[tuple[np.
             yield x_eye[i], y_softmax[i]
 
 
-# --------------------------------------------------------------- factory
+def _prepare_stream(
+    ds: tf.data.Dataset,
+    record_count: int,
+    batch_size: int,
+    steps_per_epoch: int,
+    total_epochs: int,
+) -> tf.data.Dataset:
+    """
+    Repeat the *example* stream so that, after batching with
+    drop_remainder=True, it contains exactly steps_per_epoch × total_epochs
+    """
+    needed_examples = steps_per_epoch * total_epochs * batch_size
+    rep = math.ceil(needed_examples / record_count)
+    return ds.repeat(rep).take(needed_examples).batch(batch_size, drop_remainder=True).prefetch(tf.data.AUTOTUNE)
+
+
 def build_dataset(
     cubes_path: str,
     decks_path: str,
     picks_path: str,
     freq_path: str,
     correlations_path: str,
-    batch_size: int = 32,
+    batch_size: int,
+    target_epochs: int,
+    primary: Literal["cube", "deck", "pick", "card"],
     noise: float = 0.20,
     noise_std: float = 0.1,
 ):
@@ -172,78 +191,66 @@ def build_dataset(
     deck_files = [os.path.join(decks_path, f) for f in os.listdir(decks_path)]
     pick_files = [os.path.join(picks_path, f) for f in os.listdir(picks_path)]
 
-    cube_records = _count_records(cube_files)
-    deck_records = _count_records(deck_files)
-    pick_records = _count_records(pick_files)
-    corr_records = num_cards
+    counts = dict(
+        cube=_count_records(cube_files),
+        deck=_count_records(deck_files),
+        pick=_count_records(pick_files),
+        card=len(json.load(open(freq_path))),
+    )
 
-    cube_batches = cube_records // batch_size
-    deck_batches = deck_records // batch_size
-    pick_batches = pick_records // batch_size
-    corr_batches = corr_records // batch_size
+    steps_per_epoch = math.ceil(counts[primary] / batch_size)
 
-    epoch_batches = max(cube_batches, deck_batches, pick_batches, corr_batches)
-    print(
-        "Calculated epoch size:",
-        dict(
-            cube_batches=cube_batches,
-            deck_batches=deck_batches,
-            pick_batches=pick_batches,
-            corr_batches=corr_batches,
-            epoch_batches=epoch_batches,
+    # epochs needed so that EVERY dataset is covered at least once
+    min_epochs = max(math.ceil(c / (steps_per_epoch * batch_size)) for c in counts.values())
+
+    epochs = max(target_epochs, min_epochs)
+    if epochs > target_epochs:
+        print(f"[info] Asked for {target_epochs} epochs but {epochs} needed to see every dataset once.")
+
+    print("Calculated epoch size: {steps_per_epoch} steps with batch_size = {batch_size}")
+    print("Total examples in each dataset:")
+    for k, v in counts.items():
+        print(f"{k}: {humanize_number(v)}")
+
+    cube_ds_raw = tf.data.Dataset.from_generator(
+        lambda: _cube_stream(cube_files, num_cards, neg_sampler, noise, noise_std),
+        output_signature=(
+            tf.TensorSpec((num_cards,), tf.float32),
+            tf.TensorSpec((num_cards,), tf.float32),
         ),
     )
 
-    cube_ds = _repeat_take(
-        tf.data.Dataset.from_generator(
-            lambda: _cube_stream(cube_files, num_cards, neg_sampler, noise, noise_std),
-            output_signature=(
-                tf.TensorSpec((num_cards,), tf.float32),
-                tf.TensorSpec((num_cards,), tf.float32),
-            ),
-        ).batch(batch_size, drop_remainder=True),
-        cube_batches,
-        epoch_batches,
+    deck_ds_raw = tf.data.Dataset.from_generator(
+        lambda: _deck_stream(deck_files, num_cards),
+        output_signature=(
+            tf.TensorSpec((num_cards,), tf.float32),
+            tf.TensorSpec((num_cards,), tf.float32),
+        ),
     )
 
-    deck_ds = _repeat_take(
-        tf.data.Dataset.from_generator(
-            lambda: _deck_stream(deck_files, num_cards),
-            output_signature=(
+    pick_ds_raw = tf.data.Dataset.from_generator(
+        lambda: _pick_stream(pick_files, num_cards),
+        output_signature=(
+            (
                 tf.TensorSpec((num_cards,), tf.float32),
                 tf.TensorSpec((num_cards,), tf.float32),
             ),
-        ).batch(batch_size, drop_remainder=True),
-        deck_batches,
-        epoch_batches,
+            tf.TensorSpec((num_cards,), tf.float32),
+        ),
     )
 
-    pick_ds = _repeat_take(
-        tf.data.Dataset.from_generator(
-            lambda: _pick_stream(pick_files, num_cards),
-            output_signature=(
-                (
-                    tf.TensorSpec((num_cards,), tf.float32),
-                    tf.TensorSpec((num_cards,), tf.float32),
-                ),
-                tf.TensorSpec((num_cards,), tf.float32),
-            ),
-        ).batch(batch_size, drop_remainder=True),
-        pick_batches,
-        epoch_batches,
+    corr_ds_raw = tf.data.Dataset.from_generator(
+        lambda: _corr_stream(x_corr, y_corr),
+        output_signature=(
+            tf.TensorSpec((num_cards,), tf.float32),
+            tf.TensorSpec((num_cards,), tf.float32),
+        ),
     )
 
-    corr_ds = _repeat_take(
-        tf.data.Dataset.from_generator(
-            lambda: _corr_stream(x_corr, y_corr),
-            output_signature=(
-                tf.TensorSpec((num_cards,), tf.float32),
-                tf.TensorSpec((num_cards,), tf.float32),
-            ),
-        ).batch(batch_size, drop_remainder=True),
-        corr_batches,
-        epoch_batches,
-    )
+    cube_ds = _prepare_stream(cube_ds_raw, counts["cube"], batch_size, steps_per_epoch, epochs)
+    deck_ds = _prepare_stream(deck_ds_raw, counts["deck"], batch_size, steps_per_epoch, epochs)
+    pick_ds = _prepare_stream(pick_ds_raw, counts["pick"], batch_size, steps_per_epoch, epochs)
+    corr_ds = _prepare_stream(corr_ds_raw, counts["corr"], batch_size, steps_per_epoch, epochs)
 
     def _merge(cube, deck, pick, corr):
         x_cube, y_cube = cube
@@ -258,4 +265,4 @@ def build_dataset(
     dataset = tf.data.Dataset.zip((cube_ds, deck_ds, pick_ds, corr_ds))
     dataset = dataset.map(_merge, num_parallel_calls=tf.data.AUTOTUNE)
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
-    return dataset, num_cards, epoch_batches
+    return dataset, counts["card"], steps_per_epoch, epochs
