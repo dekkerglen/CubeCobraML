@@ -217,7 +217,8 @@ def build_dataset(
                 ),
             ).batch(batch_size, drop_remainder=False),
             cube_batches,
-        )
+        ),
+        batch_size,
     )
 
     deck_ds = _pad_to_full_batch(
@@ -230,7 +231,8 @@ def build_dataset(
                 ),
             ).batch(batch_size, drop_remainder=False),
             deck_batches,
-        )
+        ),
+        batch_size,
     )
 
     pick_ds = _pad_to_full_batch(
@@ -246,7 +248,8 @@ def build_dataset(
                 ),
             ).batch(batch_size, drop_remainder=False),
             pick_batches,
-        )
+        ),
+        batch_size,
     )
 
     corr_ds = _pad_to_full_batch(
@@ -259,7 +262,8 @@ def build_dataset(
                 ),
             ).batch(batch_size, drop_remainder=False),
             corr_batches,
-        )
+        ),
+        batch_size,
     )
 
     def _merge(cube, deck, pick, corr):
