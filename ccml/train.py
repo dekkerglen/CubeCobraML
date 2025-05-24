@@ -9,6 +9,7 @@ import sys
 from tensorflow.keras.metrics import TopKCategoricalAccuracy
 
 from ccml.data import build_dataset
+from ccml.metrics import top_rated_percent
 from ccml.model import CubeCobraMLSystem
 from ccml.utils import DATA_DIR, MODEL_DIR
 
@@ -45,13 +46,13 @@ model.compile(
     loss=losses,
     loss_weights=[1.0] * 4,
     metrics={
-        "output_1": "accuracy",
-        "output_2": "accuracy",
+        "output_1": top_rated_percent,
+        "output_2": top_rated_percent,
         "output_3": [
             TopKCategoricalAccuracy(k=1, name="top1"),
             TopKCategoricalAccuracy(k=3, name="top3"),
         ],
-        "output_4": "accuracy",
+        "output_4": top_rated_percent,
     },
 )
 

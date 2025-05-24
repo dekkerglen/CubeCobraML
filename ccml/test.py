@@ -6,6 +6,9 @@ from ccml.model import CubeCobraMLSystem
 from ccml.utils import DATA_DIR, MODEL_DIR
 
 TEST_DIR = DATA_DIR / "test"
+# weirdly the correlations have bugs in the test data so we just use the training ones
+# since these are used as an implicit form of regularization, it shouldnt be held out anyways
+TRAIN_DIR = DATA_DIR / "train"
 BATCH_SIZE = 128
 PRIMARY = "pick"
 
@@ -14,7 +17,7 @@ test_ds, card_count, steps = build_dataset(
     decks_path=TEST_DIR / "decks.json",
     picks_path=TEST_DIR / "picks.json",
     freq_path=TEST_DIR / "oracleFrequency.json",
-    correlations_path=TEST_DIR / "oracleFrequency.json",
+    correlations_path=TRAIN_DIR / "correlations.json",
     batch_size=BATCH_SIZE,
     target_epochs=1,
     primary=PRIMARY,
