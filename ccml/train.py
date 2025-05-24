@@ -15,19 +15,17 @@ from ccml.utils import DATA_DIR, MODEL_DIR
 DATA_DIR = DATA_DIR / "train"
 # ---------------------------------------------------------------- params
 epochs = int(sys.argv[1])
-steps_per_epoch = int(sys.argv[2])
+batch_size = int(sys.argv[2])
 continue_flag = sys.argv[3].lower() == "true"
 
-BATCH_SIZE = 32
-
 # ----------------------------------------------------------- data pipeline
-dataset, num_cards = build_dataset(
+dataset, num_cards, steps_per_epoch = build_dataset(
     cubes_path=os.path.join(DATA_DIR, "cubes"),
     decks_path=os.path.join(DATA_DIR, "decks"),
     picks_path=os.path.join(DATA_DIR, "picks"),
     freq_path=os.path.join(DATA_DIR, "oracleFrequency.json"),
     correlations_path=os.path.join(DATA_DIR, "correlations.json"),
-    batch_size=BATCH_SIZE,
+    batch_size=batch_size,
 )
 
 # --------------------------------------------------------------- model
