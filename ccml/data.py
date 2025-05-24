@@ -219,6 +219,7 @@ def build_dataset(
                 ),
             ).batch(batch_size, drop_remainder=False),
             cube_batches,
+            epoch_batches,
         ),
         batch_size,
     )
@@ -233,6 +234,7 @@ def build_dataset(
                 ),
             ).batch(batch_size, drop_remainder=False),
             deck_batches,
+            epoch_batches,
         ),
         batch_size,
     )
@@ -250,6 +252,7 @@ def build_dataset(
                 ),
             ).batch(batch_size, drop_remainder=False),
             pick_batches,
+            epoch_batches,
         ),
         batch_size,
     )
@@ -264,6 +267,7 @@ def build_dataset(
                 ),
             ).batch(batch_size, drop_remainder=False),
             corr_batches,
+            epoch_batches,
         ),
         batch_size,
     )
