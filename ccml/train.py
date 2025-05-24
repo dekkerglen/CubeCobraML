@@ -1,0 +1,69 @@
+"""
+Usage:  python train.py <epochs> <steps_per_epoch> <continue_train:true|false>
+The second CLI argument now means *steps per epoch* (was “num_batches”).
+"""
+
+import os
+import sys
+
+from tensorflow.keras.metrics import TopKCategoricalAccuracy
+
+from ccml.data import build_dataset
+from ccml.model import CubeCobraMLSystem
+from ccml.utils import DATA_DIR, MODEL_DIR
+
+DATA_DIR = DATA_DIR / "train"
+# ---------------------------------------------------------------- params
+epochs = int(sys.argv[1])
+steps_per_epoch = int(sys.argv[2])
+continue_flag = sys.argv[3].lower() == "true"
+
+BATCH_SIZE = 32
+
+# ----------------------------------------------------------- data pipeline
+dataset, num_cards = build_dataset(
+    cubes_path=os.path.join(DATA_DIR, "cubes"),
+    decks_path=os.path.join(DATA_DIR, "decks"),
+    picks_path=os.path.join(DATA_DIR, "picks"),
+    freq_path=os.path.join(DATA_DIR, "oracleFrequency.json"),
+    correlations_path=os.path.join(DATA_DIR, "correlations.json"),
+    batch_size=BATCH_SIZE,
+)
+
+# --------------------------------------------------------------- model
+print("Creating / loading model …")
+model = CubeCobraMLSystem(num_cards)
+
+losses = [
+    "binary_crossentropy",
+    "binary_crossentropy",
+    "categorical_crossentropy",
+    "kullback_leibler_divergence",
+]
+
+model.compile(
+    optimizer="adam",
+    loss=losses,
+    loss_weights=[1.0] * 4,
+    metrics={
+        "output_1": "accuracy",
+        "output_2": "accuracy",
+        "output_3": [
+            TopKCategoricalAccuracy(k=1, name="top1"),
+            TopKCategoricalAccuracy(k=3, name="top3"),
+        ],
+        "output_4": "accuracy",
+    },
+)
+
+if continue_flag and os.path.isdir(MODEL_DIR):
+    model.load_weights(MODEL_DIR)
+    print("Weights restored.")
+
+
+# -------------------------------------------------------------- training
+model.fit(dataset, epochs=epochs, steps_per_epoch=steps_per_epoch)
+
+os.makedirs(MODEL_DIR, exist_ok=True)
+model.save_weights(MODEL_DIR)
+print(f"Saved weights to {MODEL_DIR}")
