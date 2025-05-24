@@ -12,4 +12,4 @@ def _get_git_root() -> Path:
 
 ROOT = _get_git_root()
 DATA_DIR = ROOT / "data"
-MODEL_DIR = ROOT / "model/model"
+MODEL_DIR = ROOT / "model"

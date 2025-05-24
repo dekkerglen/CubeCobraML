@@ -24,21 +24,21 @@ A trained model is comitted to the repo under `/model/tfjs_model`. You can use t
 
 ## The Model
 
-You'll need python installed with tensorflow.
+Install uv and run `uv sync` to get your virtual environment set up with the proper dependencies.
 
-Navigate to `/model/`
+Navigate to `/ccml/`
 
 You have a couple executable files there:
 
-- `python train.py 10 128 false 1.0` trains the model with:
+- `python train.py 10 128 false` trains the model with:
     - 10 epochs
     - 128 batch size
     - false continuing training from a previous model
-    - 1.0 for the loss weights
+
 - `python test.py` tests the model
 
 As well as a conversion script. This script needs to be run from the root folder like:
-`sh model/convert.sh`
+`sh scripts/convert.sh`
 
 In order to get the conversion script to work, you'll need to install tfjs binaries which are not supported in windows currently.
 
