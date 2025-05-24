@@ -16,7 +16,7 @@ batch_size = int(params[1])
 continue_training = params[2]
 loss_weights = float(params[3])
 
-data_dir = "../data/train/"
+data_dir = "../../../CubeCobraML/data/train/"
 model_dir = "./model/"
 
 
