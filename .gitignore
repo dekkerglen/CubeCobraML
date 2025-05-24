@@ -1,7 +1,7 @@
 data
 raw_data
 node_modules
-model/__pycache__
 ccml/__pycache__
 .venv
 .env
+.DS_Store

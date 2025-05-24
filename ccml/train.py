@@ -13,12 +13,11 @@ from ccml.model import CubeCobraMLSystem
 from ccml.utils import DATA_DIR, MODEL_DIR
 
 DATA_DIR = DATA_DIR / "train"
-# ---------------------------------------------------------------- params
 epochs = int(sys.argv[1])
 batch_size = int(sys.argv[2])
 continue_flag = sys.argv[3].lower() == "true"
 primary_stream = sys.argv[4].lower()
-# ----------------------------------------------------------- data pipeline
+
 dataset, num_cards, steps_per_epoch, epochs_final = build_dataset(
     cubes_path=os.path.join(DATA_DIR, "cubes"),
     decks_path=os.path.join(DATA_DIR, "decks"),
@@ -30,7 +29,7 @@ dataset, num_cards, steps_per_epoch, epochs_final = build_dataset(
     primary=primary_stream,
 )
 
-# --------------------------------------------------------------- model
+
 print("Creating / loading model …")
 model = CubeCobraMLSystem(num_cards)
 
@@ -61,9 +60,10 @@ if continue_flag and os.path.isdir(MODEL_DIR):
     print("Weights restored.")
 
 
-# -------------------------------------------------------------- training
-model.fit(dataset, epochs=epochs, steps_per_epoch=steps_per_epoch)
-
-os.makedirs(MODEL_DIR, exist_ok=True)
-model.save_weights(MODEL_DIR)
-print(f"Saved weights to {MODEL_DIR}")
+# fit the model and save it even if the process gets disrupted
+try:
+    model.fit(dataset, epochs=epochs_final, steps_per_epoch=steps_per_epoch)
+finally:
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    model.save_weights(MODEL_DIR)
+    print(f"Saved weights to {MODEL_DIR}")
