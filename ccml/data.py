@@ -21,11 +21,13 @@ from typing import Iterator
 
 import numpy as np
 import tensorflow as tf
+from tqdm.auto import tqdm
 
 
 def _count_records(files: list[str]) -> int:
     total = 0
-    for f in files:
+    print("Counting records in", len(files), "files")
+    for f in tqdm(files):
         # every JSON file is a list [...]  – count its length quickly
         with open(f) as fh:
             total += len(json.load(fh))
