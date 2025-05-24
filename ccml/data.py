@@ -51,7 +51,9 @@ def _augment_cube(
 
     flip_include = np.random.choice(includes, flip_amount, replace=False)
 
-    excludes = np.setdiff1d(np.arange(num_cards, dtype=np.int32), includes, assume_unique=True)
+    excludes = np.setdiff1d(
+        np.arange(num_cards, dtype=np.int32), includes, assume_unique=True
+    )
     probs = neg_sampler[excludes] / neg_sampler[excludes].sum()
     flip_exclude = np.random.choice(excludes, flip_amount, p=probs, replace=False)
 
@@ -80,7 +82,9 @@ def _cube_stream(
                 yield _augment_cube(indices, num_cards, neg_sampler, noise, noise_std)
 
 
-def _deck_stream(files: List[str], num_cards: int) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
+def _deck_stream(
+    files: List[str], num_cards: int
+) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
     while True:
         np.random.shuffle(files)
         for fname in files:
@@ -90,7 +94,9 @@ def _deck_stream(files: List[str], num_cards: int) -> Iterator[Tuple[np.ndarray,
                 yield np.clip(main + side, 0.0, 1.0), main
 
 
-def _pick_stream(files: List[str], num_cards: int) -> Iterator[Tuple[Tuple[np.ndarray, np.ndarray], np.ndarray]]:
+def _pick_stream(
+    files: List[str], num_cards: int
+) -> Iterator[Tuple[Tuple[np.ndarray, np.ndarray], np.ndarray]]:
     while True:
         np.random.shuffle(files)
         for fname in files:
@@ -101,7 +107,9 @@ def _pick_stream(files: List[str], num_cards: int) -> Iterator[Tuple[Tuple[np.nd
                 yield (pool, pack), pick
 
 
-def _corr_stream(x_eye: np.ndarray, y_softmax: np.ndarray) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
+def _corr_stream(
+    x_eye: np.ndarray, y_softmax: np.ndarray
+) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
     rows = x_eye.shape[0]
     while True:
         for i in np.random.permutation(rows):
@@ -183,7 +191,10 @@ def build_dataset(
         x_deck, y_deck = deck
         (pool, pack), y_pick = pick
         x_corr, y_corr = corr
-        return ([x_cube, x_deck, (pool, pack), x_corr], [y_cube, y_deck, y_pick, y_corr])
+        return (
+            (x_cube, x_deck, (pool, pack), x_corr),
+            (y_cube, y_deck, y_pick, y_corr),
+        )
 
     dataset = tf.data.Dataset.zip((cube_ds, deck_ds, pick_ds, corr_ds))
     dataset = dataset.map(_merge, num_parallel_calls=tf.data.AUTOTUNE)
