@@ -13,9 +13,9 @@ BATCH_SIZE = 128
 PRIMARY = "pick"
 
 test_ds, card_count, steps = build_dataset(
-    cubes_path=TEST_DIR / "cubes.json",
-    decks_path=TEST_DIR / "decks.json",
-    picks_path=TEST_DIR / "picks.json",
+    cubes_path=TEST_DIR / "cubes",
+    decks_path=TEST_DIR / "decks",
+    picks_path=TEST_DIR / "picks",
     freq_path=TEST_DIR / "oracleFrequency.json",
     correlations_path=TRAIN_DIR / "correlations.json",
     batch_size=BATCH_SIZE,
