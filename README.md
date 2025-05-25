@@ -1,11 +1,6 @@
 # Magic the Gathering Cube Multi-Purpose Model
 
-## Overview
-
-This repo has three components:
-- The model
-- The demo server
-- The demo client
+This repo contains a model that simultaneously trains a deckbuiler, drafter, and recommender system with a shared encoder.
 
 ## Setup 
 
@@ -20,27 +15,30 @@ Set it up like this:
         ...files
 ```
 
-A trained model is comitted to the repo under `/model/tfjs_model`. You can use this model to run the demo.
+A trained model is comitted to the repo under `tfjs_model`. You can use this model to run the demo.
 
-## The Model
+## Training a New Model
 
-Install uv and run `uv sync` to get your virtual environment set up with the proper dependencies.
+```bash
+>>> curl -LsSf https://astral.sh/uv/install.sh | sh # install uv, which we use for dependency management
+>>> uv sync
+>>> source .venv/bin/activate
+>>> python ccml/train.py 500 256 false cube
+```
 
-Navigate to `/ccml/`
+The above command will train a model with a batch size of 256 such that training will stop after it has iterated over each cube 500 times. That last parameter can be any of cube, card, pick, deck. Note that if you select a number that would not let it train on the full dataset, the script will train longer until it goes over each data point at least one time.
 
-You have a couple executable files there:
+Once your model is done training (or you manually kill the process), your model will be saved in the `model` directory. Execute the following script to convert the model to js in order to deploy it or launch the demo. In order to get the conversion script to work, you'll need to install tfjs binaries which are not supported in windows currently.
 
-- `python train.py 10 128 false` trains the model with:
-    - 10 epochs
-    - 128 batch size
-    - false continuing training from a previous model
+```bash
+>>> sh scripts/convert.sh
+```
 
-- `python test.py` tests the model
+Additionally, to get some statistics on the performance of the holdout set, you can run
 
-As well as a conversion script. This script needs to be run from the root folder like:
-`sh scripts/convert.sh`
-
-In order to get the conversion script to work, you'll need to install tfjs binaries which are not supported in windows currently.
+```bash
+>>> python ccml/test.py
+```
 
 ## Demo
 
@@ -59,7 +57,7 @@ And to download it, run
 `aws s3 cp s3://cubecobra-private/training-2025/data data --recursive`
 
 To upload the tfjs model to s3, run
-`aws s3 cp model/tfjs_model s3://cubecobra-data-production/model --recursive`
+`aws s3 cp tfjs_model s3://cubecobra-data-production/model --recursive`
 MAKE SURE to get the indexToOracleMap file as well, or the model won't work.
 
 
