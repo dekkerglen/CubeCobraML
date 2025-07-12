@@ -53,10 +53,10 @@ Wait a minute, and then a browser window should open with the demo at `localhost
 ## Uploading data to s3
 
 To recursively upload the `data` folder to s3, run
-`aws s3 cp data s3://cubecobra-private/training-2025/data --recursive`
+`aws s3 cp data s3://cubecobra-private/training-2025/july/data --recursive`
 
 And to download it, run
-`aws s3 cp s3://cubecobra-private/training-2025/data data --recursive`
+`aws s3 cp s3://cubecobra-private/training-2025/july/data data --recursive`
 
 To upload the tfjs model to s3, run
 `aws s3 cp model/tfjs_model s3://cubecobra-data-production/model --recursive`
