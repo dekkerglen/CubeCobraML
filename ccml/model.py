@@ -57,17 +57,24 @@ class CubeCobraMLSystem(Model):
         super().__init__()
         self.encoder = Encoder("encoder")
         self.cube_decoder = Decoder("recommend", num_cards, tf.nn.sigmoid)
+        # Draft and deck-build decoders receive twice-wide input:
+        # concat(encoded_pool, encoded_cube_context) → 256-dim
+        # Draft decoder gets +2 for landCount/nonlandCount → 258-dim
         self.draft_decoder = Decoder("draft", num_cards, "linear")
         self.deck_build_decoder = Decoder("deck_build", num_cards, tf.nn.sigmoid)
         self.correlation_decoder = Decoder("correlate", num_cards, tf.nn.softmax)
 
-    # inputs is [[cubes], [decks], [[packs], [pools]], [cards]]
+    # inputs is:
+    #   [cubes,
+    #    (deck_pools, deck_cube_ctx),
+    #    (draft_pools, draft_packs, draft_cube_ctx, draft_counts),
+    #    cards]
     @tf.function
     def call(self, inputs, training=None):
         return [
             self.recommend(inputs[0], training=training),
-            self.deck_build(inputs[1], training=training),
-            self.draft(inputs[2][0], inputs[2][1], training=training),
+            self.deck_build(inputs[1][0], inputs[1][1], training=training),
+            self.draft(inputs[2][0], inputs[2][1], inputs[2][2], inputs[2][3], training=training),
             self.correlate(inputs[3], training=training),
         ]
 
@@ -77,14 +84,18 @@ class CubeCobraMLSystem(Model):
         return self.cube_decoder(embedding, training=training)
 
     @tf.function
-    def deck_build(self, pools, training=None):
-        embedding = self.encoder(pools, training=training)
-        return self.deck_build_decoder(embedding, training=training)
+    def deck_build(self, pools, cube_context, training=None):
+        pool_embedding = self.encoder(pools, training=training)
+        cube_embedding = self.encoder(cube_context, training=training)
+        combined = tf.concat([pool_embedding, cube_embedding], axis=-1)
+        return self.deck_build_decoder(combined, training=training)
 
     @tf.function
-    def draft(self, pools, packs, training=None):
-        embedding = self.encoder(pools, training=training)
-        best_possible_picks = self.draft_decoder(embedding, training=training)
+    def draft(self, pools, packs, cube_context, draft_counts, training=None):
+        pool_embedding = self.encoder(pools, training=training)
+        cube_embedding = self.encoder(cube_context, training=training)
+        combined = tf.concat([pool_embedding, cube_embedding, draft_counts], axis=-1)
+        best_possible_picks = self.draft_decoder(combined, training=training)
         mask = 1e9 * (1 - packs)
         return tf.nn.softmax(best_possible_picks * packs - mask)
 

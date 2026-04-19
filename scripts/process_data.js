@@ -9,7 +9,7 @@ const WRITE_BATCH_SIZE = 10000;
 
 const ensureDir = (dir) => {
   if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir);
+    fs.mkdirSync(dir, { recursive: true });
   }
 }
 
@@ -72,14 +72,26 @@ function writeLargeArray(filepath, arr) {
   fs.closeSync(fd);
 }
 
+/**
+ * Process cubes from raw_data/cubes.json.
+ * Returns { numCubes, cubeMap } where cubeMap is { cubeId: cardIndexArray }
+ * so that deck processing can look up the cube's card list.
+ */
 const processCubes = (numOracles) => {
   console.log('\tLoading cubes...');
 
   let cubeCount = 0;
 
-  const cubes = JSON.parse(fs.readFileSync(`${sourceDir}/cubes.json`, 'utf8'))
-    .filter((cube) => cube.cards.length > 0)
-    .map((cube) => cube.cards);
+  const rawCubes = JSON.parse(fs.readFileSync(`${sourceDir}/cubes.json`, 'utf8'))
+    .filter((cube) => cube.cards.length > 0);
+
+  // Build a map from cube UUID → card list for deck processing
+  const cubeMap = {};
+  for (const cube of rawCubes) {
+    cubeMap[cube.id] = cube.cards;
+  }
+
+  const cubes = rawCubes.map((cube) => cube.cards);
 
   const oracleFrequency = new Array(numOracles).fill(0);
 
@@ -91,12 +103,11 @@ const processCubes = (numOracles) => {
 
   console.log(`\tLoaded ${cubes.length} cubes.`);
 
-  const train =cubes.slice(0, Math.floor(cubes.length * (1-TEST_PERCENT)));
-  const test = cubes.slice(Math.floor(cubes.length * (1-TEST_PERCENT)));
+  const train = cubes.slice(0, Math.floor(cubes.length * (1 - TEST_PERCENT)));
+  const test = cubes.slice(Math.floor(cubes.length * (1 - TEST_PERCENT)));
 
   ensureDir(`${trainDir}/cubes`);
   ensureDir(`${testDir}/cubes`);
-
 
   for (let i = 0; i < train.length / WRITE_BATCH_SIZE; i++) {
     cubeCount += train.slice(i * WRITE_BATCH_SIZE, (i + 1) * WRITE_BATCH_SIZE).length;
@@ -112,7 +123,7 @@ const processCubes = (numOracles) => {
   
   console.log('\tDone processing cubes.');
 
-  return cubeCount;
+  return { numCubes: cubeCount, cubeMap };
 }
 
 const incrementCorrelation = (correlations, oracleIndex1, oracleIndex2, oracleCount) => {
@@ -127,26 +138,32 @@ const incrementCorrelation = (correlations, oracleIndex1, oracleIndex2, oracleCo
   correlations[index2]++;
 }
 
-const processDecks = (oracleCount) => {
+/**
+ * Process decks from raw_data/decks/.
+ * Each deck now includes cube_cards — the full card list of the cube it was
+ * drafted from, looked up via the deck's `cube` UUID in cubeMap.
+ */
+const processDecks = (oracleCount, cubeMap) => {
   console.log('\tLoading decks...');
 
   let numDecks = 0;
 
   const correlations = new Int32Array(oracleCount * oracleCount).fill(0);
 
-  // enumurate src/decks
+  // enumerate src/decks
   const deckFiles = fs.readdirSync(`${sourceDir}/decks`);
 
   console.log(`\tLoaded ${deckFiles.length} deck files.`);
 
   const decks = [];
 
-  for (let i = 0; i < deckFiles.length; i++) {
+  for (let i = 3139; i < deckFiles.length; i++) {
     decks.push(...JSON.parse(fs.readFileSync(`${sourceDir}/decks/${deckFiles[i]}`, 'utf8'))
       .filter((deck) => deck.mainboard.length > 0 || deck.sideboard.length > 0)
       .map((deck) => ({
         mainboard: deck.mainboard.filter((card) => !(deck.basics || []).includes(card)),
         sideboard: deck.sideboard.filter((card) => !(deck.basics || []).includes(card)),
+        cube_cards: cubeMap[deck.cube] || [],
       })));
 
     for (let j = 0; j < decks.length; j++) {
@@ -160,8 +177,8 @@ const processDecks = (oracleCount) => {
     console.log(`\tProcessed ${i + 1} of ${deckFiles.length} deck files.`);
   }
 
-  const train = decks.slice(0, Math.floor(decks.length * (1-TEST_PERCENT)));
-  const test = decks.slice(Math.floor(decks.length * (1-TEST_PERCENT)));
+  const train = decks.slice(0, Math.floor(decks.length * (1 - TEST_PERCENT)));
+  const test = decks.slice(Math.floor(decks.length * (1 - TEST_PERCENT)));
 
   ensureDir(`${trainDir}/decks`);
   ensureDir(`${testDir}/decks`);
@@ -182,12 +199,24 @@ const processDecks = (oracleCount) => {
   return numDecks;
 }
 
-const processPicks =  (numOracles) => {
+/**
+ * Process picks from raw_data/picks/ alongside raw_data/cubeInstances/.
+ *
+ * To avoid duplicating cube context ~45× per draft, we keep a separate
+ * cubeInstances/ directory that parallels picks/.  Each pick stores only a
+ * small integer `cube_cards_idx` referencing into the cubeInstances array
+ * for the same batch file.
+ *
+ * Output structure:
+ *   picks/{n}.json       - array of { pool, pick, pack, cube_cards_idx }
+ *   cubeInstances/{n}.json - array of card-index arrays (deduplicated per file)
+ */
+const processPicks = (numOracles) => {
   console.log('\tLoading picks...');
 
   let numPicks = 0;
 
-  // enumurate src/picks
+  // enumerate src/picks
   const pickFiles = fs.readdirSync(`${sourceDir}/picks`);
 
   console.log(`\tLoaded ${pickFiles.length} pick files.`);
@@ -195,34 +224,66 @@ const processPicks =  (numOracles) => {
 
   ensureDir(`${trainDir}/picks`);
   ensureDir(`${testDir}/picks`);
+  ensureDir(`${trainDir}/cubeInstances`);
+  ensureDir(`${testDir}/cubeInstances`);
 
-  let trainIndex = 0;
-  let testIndex = 0;
+  // We collect picks into a flat train/test array, then batch-write them
+  // along with a deduplicated cubeInstances array per output batch.
+  let trainPicks = [];
+  let trainCubeInstances = [];  // deduplicated cube card lists for current batch
+  let trainCubeMap = {};        // JSON(cubeCards) → index into trainCubeInstances
+  let trainBatchIdx = 0;
 
-  let trainSize = 0;
-  let testSize = 0;
+  let testPicks = [];
+  let testCubeInstances = [];
+  let testCubeMap = {};
+  let testBatchIdx = 0;
 
-  const nextTrainFile = () => {
-    const trainFile = fs.openSync(`${trainDir}/picks/${padLeft(trainIndex, 4)}.json`, 'w');
-    fs.writeSync(trainFile, '[');
-    return trainFile;
-  }
+  const flushTrain = () => {
+    if (trainPicks.length === 0) return;
+    writeFile(`${trainDir}/picks/${padLeft(trainBatchIdx, 4)}.json`, trainPicks);
+    writeFile(`${trainDir}/cubeInstances/${padLeft(trainBatchIdx, 4)}.json`, trainCubeInstances);
+    trainBatchIdx++;
+    trainPicks = [];
+    trainCubeInstances = [];
+    trainCubeMap = {};
+  };
 
-  const nextTestFile = () => {
-    const testFile = fs.openSync(`${testDir}/picks/${padLeft(testIndex, 4)}.json`, 'w');
-    fs.writeSync(testFile, '[');
-    return testFile;
-  }
+  const flushTest = () => {
+    if (testPicks.length === 0) return;
+    writeFile(`${testDir}/picks/${padLeft(testBatchIdx, 4)}.json`, testPicks);
+    writeFile(`${testDir}/cubeInstances/${padLeft(testBatchIdx, 4)}.json`, testCubeInstances);
+    testBatchIdx++;
+    testPicks = [];
+    testCubeInstances = [];
+    testCubeMap = {};
+  };
 
-  const closeFile = (file) => {
-    fs.writeSync(file, ']');
-    fs.closeSync(file);
-  } 
+  const getTrainCubeIdx = (cubeCards) => {
+    const key = JSON.stringify(cubeCards);
+    if (trainCubeMap[key] !== undefined) return trainCubeMap[key];
+    const idx = trainCubeInstances.length;
+    trainCubeInstances.push(cubeCards);
+    trainCubeMap[key] = idx;
+    return idx;
+  };
 
-  let trainFile = nextTrainFile();
-  let testFile = nextTestFile();
+  const getTestCubeIdx = (cubeCards) => {
+    const key = JSON.stringify(cubeCards);
+    if (testCubeMap[key] !== undefined) return testCubeMap[key];
+    const idx = testCubeInstances.length;
+    testCubeInstances.push(cubeCards);
+    testCubeMap[key] = idx;
+    return idx;
+  };
 
   for (let i = 0; i < pickFiles.length; i++) {
+    // Load the corresponding cubeInstances file (parallel batch)
+    const cubeInstancesPath = `${sourceDir}/cubeInstances/${pickFiles[i]}`;
+    const cubeInstances = fs.existsSync(cubeInstancesPath)
+      ? JSON.parse(fs.readFileSync(cubeInstancesPath, 'utf8'))
+      : [];
+
     const picks = JSON.parse(fs.readFileSync(`${sourceDir}/picks/${pickFiles[i]}`, 'utf8'))
       .filter((pick) => 
         pick.pack.filter((index) => index !== -1).filter((index) => index).length > 1
@@ -235,74 +296,38 @@ const processPicks =  (numOracles) => {
         pool: pick.pool.filter((card) => card !== pick.picked).filter((index) => index !== -1).filter((index) => index),
         pick: pick.picked,
         pack: pick.pack.filter((index) => index !== -1).filter((index) => index),
+        landCount: pick.landCount || 0,
+        nonlandCount: pick.nonlandCount || 0,
+        _cubeCards: cubeInstances[pick.cubeCards] || [],
       }));
 
-    const train = picks.slice(0, Math.floor(picks.length * (1-TEST_PERCENT)));
-    const test = picks.slice(Math.floor(picks.length * (1-TEST_PERCENT)));
+    const train = picks.slice(0, Math.floor(picks.length * (1 - TEST_PERCENT)));
+    const test = picks.slice(Math.floor(picks.length * (1 - TEST_PERCENT)));
     
     numPicks += train.length;
 
-    if (train.length > 0) {
-      if (trainSize > 0) {
-        fs.writeFileSync(trainFile, ',');
-      }
-
-      if (trainSize + train.length >= WRITE_BATCH_SIZE) {
-        const toAppendSerialized = JSON.stringify(train.slice(0, WRITE_BATCH_SIZE - trainSize));
-        const toWrite = train.slice(WRITE_BATCH_SIZE - trainSize);
-        const toWriteSerialized = JSON.stringify(toWrite);        
-
-        fs.writeFileSync(trainFile, toAppendSerialized.substring(1, toAppendSerialized.length - 1));
-        closeFile(trainFile);
-
-        trainIndex++;
-        trainFile = nextTrainFile();
-        fs.writeFileSync(trainFile, toWriteSerialized.substring(1, toWriteSerialized.length - 1));
-        trainSize = toWrite.length;
-
-
-      } else {
-        const serialized = JSON.stringify(train);
-
-        fs.writeFileSync(trainFile, serialized.substring(1, serialized.length - 1));
-        trainSize += train.length;
+    for (const p of train) {
+      const cubeIdx = getTrainCubeIdx(p._cubeCards);
+      trainPicks.push({ pool: p.pool, pick: p.pick, pack: p.pack, cube_cards_idx: cubeIdx, landCount: p.landCount, nonlandCount: p.nonlandCount });
+      if (trainPicks.length >= WRITE_BATCH_SIZE) {
+        flushTrain();
       }
     }
-    
-    if (test.length > 0) {
-      if (testSize + test.length > WRITE_BATCH_SIZE) {
-        const toAppendSerialized = JSON.stringify(test.slice(0, WRITE_BATCH_SIZE - testSize));
-        const toWrite = test.slice(WRITE_BATCH_SIZE - testSize);
-        const toWriteSerialized = JSON.stringify(toWrite);
 
-        fs.writeFileSync(testFile, toAppendSerialized.substring(1, toAppendSerialized.length - 1));
-        closeFile(testFile);
-
-        testIndex++;
-        testFile = nextTestFile();
-        fs.writeFileSync(testFile, toWriteSerialized.substring(1, toWriteSerialized.length - 1));
-        testSize = toWrite.length;
-
-        if (testSize < WRITE_BATCH_SIZE) {
-          fs.writeFileSync(testFile, ',');
-        }
-      } else {
-        const serialized = JSON.stringify(test);
-
-        fs.writeFileSync(testFile, serialized.substring(1, serialized.length - 1));
-        testSize += test.length;
-
-        if (testSize < WRITE_BATCH_SIZE) {
-          fs.writeFileSync(testFile, ',');
-        }
+    for (const p of test) {
+      const cubeIdx = getTestCubeIdx(p._cubeCards);
+      testPicks.push({ pool: p.pool, pick: p.pick, pack: p.pack, cube_cards_idx: cubeIdx, landCount: p.landCount, nonlandCount: p.nonlandCount });
+      if (testPicks.length >= WRITE_BATCH_SIZE) {
+        flushTest();
       }
     }
 
     console.log(`\t\tProcessed ${i} / ${pickFiles.length}`);
   }
 
-  closeFile(trainFile);
-  closeFile(testFile);
+  // flush remaining
+  flushTrain();
+  flushTest();
 
   console.log(`\tDone processing ${pickFiles.length} pick files.`);
 
@@ -336,10 +361,9 @@ const processOracleDict = () => {
   return indexToOracle.length;
 }
 
-const run =  () => {  
-  if (!fs.existsSync(trainDir)) {
-    fs.mkdirSync(trainDir);
-  }
+const run = () => {  
+  ensureDir(trainDir);
+  ensureDir(testDir);
 
   const metadata = {};
 
@@ -347,11 +371,12 @@ const run =  () => {
 
   console.log("We have " + metadata.numOracles + " oracles.")
 
-  // console.log('Processing cubes...');
-  // metadata.numCubes = processCubes(metadata.numOracles);
+  console.log('Processing cubes...');
+  const { numCubes, cubeMap } = processCubes(metadata.numOracles);
+  metadata.numCubes = numCubes;
 
-  // console.log('Processing decks...');
-  // metadata.numDecks = processDecks(metadata.numOracles);
+  console.log('Processing decks...');
+  metadata.numDecks = processDecks(metadata.numOracles, cubeMap);
 
   console.log('Processing picks...');
   metadata.numPicks = processPicks(metadata.numOracles);

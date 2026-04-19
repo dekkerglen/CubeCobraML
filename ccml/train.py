@@ -23,6 +23,7 @@ dataset, num_cards, steps_per_epoch, epochs_final = build_dataset(
     cubes_path=os.path.join(DATA_DIR, "cubes"),
     decks_path=os.path.join(DATA_DIR, "decks"),
     picks_path=os.path.join(DATA_DIR, "picks"),
+    cube_instances_path=os.path.join(DATA_DIR, "cubeInstances"),
     freq_path=os.path.join(DATA_DIR, "oracleFrequency.json"),
     correlations_path=os.path.join(DATA_DIR, "correlations.json"),
     batch_size=batch_size,
