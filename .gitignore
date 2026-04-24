@@ -5,3 +5,6 @@ ccml/__pycache__
 .venv
 .env
 .DS_Store
+/tfjs_model
+/model
+/model_copy

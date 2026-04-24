@@ -103,6 +103,57 @@ def _augment_cube(
     return x_cube, y_cube
 
 
+def _noise_cube_context(
+    cube_ctx: np.ndarray,
+    num_cards: int,
+    neg_sampler: np.ndarray,
+    no_context_prob: float = 0.5,
+    noise: float = 0.10,
+    noise_std: float = 0.05,
+) -> np.ndarray:
+    """Apply noise to cube context for generalization.
+    
+    Args:
+        cube_ctx: binary vector representing cube cards
+        num_cards: total number of cards
+        neg_sampler: probability distribution for sampling cards (inverse frequency)
+        no_context_prob: probability of returning all zeros (no context)
+        noise: average percent of cards to flip on (that aren't present)
+        noise_std: standard deviation of noise level
+        
+    Returns:
+        Noised cube context vector
+    """
+    # 50% of the time, provide no context at all
+    if np.random.random() < no_context_prob:
+        return np.zeros(num_cards, dtype=np.float32)
+    
+    # Otherwise, add random cards that aren't present
+    present = np.where(cube_ctx > 0.5)[0]
+    excludes = np.setdiff1d(np.arange(num_cards, dtype=np.int32), present, assume_unique=True)
+    
+    if len(excludes) == 0:
+        return cube_ctx.copy()
+    
+    # Sample how many fake cards to add
+    cube_size = len(present) if len(present) > 0 else 360  # assume ~360 if empty
+    noise_level = np.clip(np.random.normal(noise, noise_std), a_min=0.0, a_max=0.3)
+    add_amount = int(cube_size * noise_level)
+    
+    if add_amount == 0:
+        return cube_ctx.copy()
+    
+    # Sample cards weighted by inverse frequency (like recommender noising)
+    probs = neg_sampler[excludes] / neg_sampler[excludes].sum()
+    add_amount = min(add_amount, len(excludes))
+    fake_cards = np.random.choice(excludes, add_amount, p=probs, replace=False)
+    
+    noised_ctx = cube_ctx.copy()
+    noised_ctx[fake_cards] = 1.0
+    
+    return noised_ctx
+
+
 # -----------------------------------------------Stream Functions-----------------------------------------------
 # These functions are used to stream data from disk to avoid materializing large matrices in RAM.
 
@@ -121,7 +172,11 @@ def _cube_stream(
                 yield _augment_cube(indices, num_cards, neg_sampler, noise, noise_std)
 
 
-def _deck_stream(files: list[str], num_cards: int) -> Iterator[tuple[tuple[np.ndarray, np.ndarray], np.ndarray]]:
+def _deck_stream(
+    files: list[str],
+    num_cards: int,
+    neg_sampler: np.ndarray,
+) -> Iterator[tuple[tuple[np.ndarray, np.ndarray], np.ndarray]]:
     while True:
         np.random.shuffle(files)
         for fname in files:
@@ -129,10 +184,16 @@ def _deck_stream(files: list[str], num_cards: int) -> Iterator[tuple[tuple[np.nd
                 main = _create_array_representation(rec["mainboard"], num_cards)
                 side = _create_array_representation(rec["sideboard"], num_cards)
                 cube_ctx = _create_array_representation(rec.get("cube_cards", []), num_cards)
+                cube_ctx = _noise_cube_context(cube_ctx, num_cards, neg_sampler)
                 yield (np.clip(main + side, 0.0, 1.0), cube_ctx), main
 
 
-def _pick_stream(pick_files: list[str], cube_instance_dir: str, num_cards: int) -> Iterator[tuple[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray], np.ndarray]]:
+def _pick_stream(
+    pick_files: list[str],
+    cube_instance_dir: str,
+    num_cards: int,
+    neg_sampler: np.ndarray,
+) -> Iterator[tuple[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray], np.ndarray]]:
     """Stream picks, resolving cube_cards_idx from the parallel cubeInstances/ dir."""
     while True:
         np.random.shuffle(pick_files)
@@ -153,6 +214,7 @@ def _pick_stream(pick_files: list[str], cube_instance_dir: str, num_cards: int) 
                 pick = _create_array_representation([rec["pick"]], num_cards)
                 ci_idx = rec.get("cube_cards_idx")
                 cube_ctx = ci_arrays[ci_idx] if ci_idx is not None and ci_idx < len(ci_arrays) else empty
+                cube_ctx = _noise_cube_context(cube_ctx, num_cards, neg_sampler)
                 draft_counts = np.array([rec.get("landCount", 0.0), rec.get("nonlandCount", 0.0)], dtype=np.float32)
                 yield (pool, pack, cube_ctx, draft_counts), pick
 
@@ -237,7 +299,7 @@ def build_dataset(
     )
 
     deck_ds_raw = tf.data.Dataset.from_generator(
-        lambda: _deck_stream(deck_files, num_cards),
+        lambda: _deck_stream(deck_files, num_cards, neg_sampler),
         output_signature=(
             (
                 tf.TensorSpec((num_cards,), tf.float32),  # pool
@@ -248,7 +310,7 @@ def build_dataset(
     )
 
     pick_ds_raw = tf.data.Dataset.from_generator(
-        lambda: _pick_stream(pick_files, cube_instances_path, num_cards),
+        lambda: _pick_stream(pick_files, cube_instances_path, num_cards, neg_sampler),
         output_signature=(
             (
                 tf.TensorSpec((num_cards,), tf.float32),  # pool

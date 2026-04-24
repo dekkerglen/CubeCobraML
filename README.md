@@ -71,13 +71,29 @@ source .venv/bin/activate
 python ccml/train.py 500 256 false cube
 ```
 
-The above command will train a model with a batch size of 256 such that training will stop after it has iterated over each cube 500 times. The last parameter can be any of `cube`, `card`, `pick`, `deck` — it controls which dataset determines the epoch size. If the requested epoch count would not cover the full dataset, the script extends training until every data point is seen at least once.
-
-Once your model is done training (or you manually kill the process), your model will be saved in the `model` directory. Execute the following script to convert the model to TF.js for deployment or the demo. The conversion requires `tensorflowjs` binaries (not supported on Windows).
+The above command will train a model with a batch size of 256 such that training will stop after it has iterated over each cube 500 times. The third parameter (`false`) controls whether to continue from a previously saved checkpoint. The last parameter can be any of `cube`, `card`, `pick`, `deck` — it controls which dataset determines the epoch size. If the requested epoch count would not cover the full dataset, the script extends training until every data point is seen at least once.
 
 ```bash
-sh scripts/convert.sh
+ python ccml/train.py 1 256 false pick 
 ```
+
+The above command runs with a batch size of 256, and runs through each pick once.
+
+**To continue training after interruption:**
+
+The model automatically saves weights to the `model/` directory even if training is interrupted (Ctrl+C). To resume training from a checkpoint, change the third argument to `true`:
+
+```bash
+python ccml/train.py 500 256 true cube
+```
+
+Once your model is done training (or you manually kill the process), your model will be saved in the `model` directory. Execute the following script to convert the model to TF.js for deployment or the demo:
+
+```bash
+bash scripts/convert.sh
+```
+
+The script runs `tensorflowjs_converter` via `uvx`, which installs it into its own cached environment so it does **not** collide with the ccml `.venv`. You can run the script with the ccml venv either active or inactive — it's fully isolated. The first run will be slow (uvx downloads tensorflowjs and its pinned tensorflow); subsequent runs use the cache. Not supported on Windows.
 
 To evaluate on the holdout set:
 

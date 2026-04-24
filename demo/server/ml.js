@@ -1,3 +1,9 @@
+// tfjs-node 4.x still calls util.isNullOrUndefined, which Node 22+ removed.
+const util = require('util');
+if (typeof util.isNullOrUndefined !== 'function') {
+  util.isNullOrUndefined = (v) => v === null || v === undefined;
+}
+
 const tf = require('@tensorflow/tfjs-node');
 const fs = require('fs');
 
@@ -96,7 +102,7 @@ const recommend = (oracles) => {
   }
 }
 
-const deckbuild = (oracles) => {
+const deckbuild = (oracles, cubeOracles = []) => {
 
   if (!encoder || !deckbuilder_decoder) {
     return {
@@ -105,11 +111,14 @@ const deckbuild = (oracles) => {
     }
   }
 
-  const vector = [encodeIndeces(oracles.map(oracle => oracleToIndex[oracle]))];
-  const tensor = tf.tensor(vector);
+  const poolVector = [encodeIndeces(oracles.map(oracle => oracleToIndex[oracle]))];
+  const cubeVector = [encodeIndeces(cubeOracles.map(oracle => oracleToIndex[oracle]))];
 
-  const encoded = encoder.predict(tensor);
-  const recommendations = deckbuilder_decoder.predict([encoded]);
+  const poolEncoded = encoder.predict(tf.tensor(poolVector));
+  const cubeEncoded = encoder.predict(tf.tensor(cubeVector));
+  const combined = tf.concat([poolEncoded, cubeEncoded], -1);
+
+  const recommendations = deckbuilder_decoder.predict([combined]);
 
   const array = recommendations.dataSync();
 
@@ -136,18 +145,26 @@ const deckbuild = (oracles) => {
   }
 }
 
-const draft = (pack, pool) => {
-  const vector = [encodeIndeces(pool.map(oracle => oracleToIndex[oracle]))]; 
-  const tensor = tf.tensor(vector);
+const draftDecoderInput = (poolOracles, cubeOracles, landPct, nonlandPct) => {
+  const poolVector = [encodeIndeces(poolOracles.map(oracle => oracleToIndex[oracle]))];
+  const cubeVector = [encodeIndeces(cubeOracles.map(oracle => oracleToIndex[oracle]))];
 
-  const encoded = encoder.predict(tensor);
-  const recommendations = draft_decoder.predict([encoded]);
+  const poolEncoded = encoder.predict(tf.tensor(poolVector));
+  const cubeEncoded = encoder.predict(tf.tensor(cubeVector));
+  const counts = tf.tensor([[landPct, nonlandPct]]);
+
+  return tf.concat([poolEncoded, cubeEncoded, counts], -1);
+};
+
+const draft = (pack, pool, cubeOracles = [], landPct = 0, nonlandPct = 0) => {
+  const combined = draftDecoderInput(pool, cubeOracles, landPct, nonlandPct);
+  const recommendations = draft_decoder.predict([combined]);
 
   const array = recommendations.dataSync();
 
   const packVector = encodeIndeces(pack.map(oracle => oracleToIndex[oracle]));
   const mask = packVector.map((x) => 1e9 * (1 - x));
-  
+
   const softmaxed = softmax(array.map((x, i) => x * packVector[i] - mask[i]));
 
   const res = [];
@@ -161,20 +178,17 @@ const draft = (pack, pool) => {
       });
     }
   }
-  
+
   return res.sort((a, b) => b.rating - a.rating);
 }
 
 
-const rotodraft = (pool, picks) => {
-  const vector = [encodeIndeces(pool.map(oracle => oracleToIndex[oracle]))]; 
-  const tensor = tf.tensor(vector);
-
-  const encoded = encoder.predict(tensor);
-  const recommendations = draft_decoder.predict([encoded]);
+const rotodraft = (pool, picks, cubeOracles = [], landPct = 0, nonlandPct = 0) => {
+  const combined = draftDecoderInput(pool, cubeOracles, landPct, nonlandPct);
+  const recommendations = draft_decoder.predict([combined]);
 
   const array = recommendations.dataSync();
-  
+
   const res = [];
 
   for (let i = 0; i < numOracles; i++) {
@@ -185,7 +199,7 @@ const rotodraft = (pool, picks) => {
       });
     }
   }
-  
+
   return res.sort((a, b) => b.rating - a.rating).slice(0, picks);
 }
 

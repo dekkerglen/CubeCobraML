@@ -1,87 +1,61 @@
 import { useCallback, useState } from 'react';
-import { Row, Col, Button, Card, CardBody } from 'reactstrap';
-import CardItem from './CardItem';
+import { Row, Col, Button, Label, Input } from 'reactstrap';
+import ResultRow from './ResultRow';
 import useLocalStorage from './hooks/useLocalStorage';
 
 function RecommendPage() {
   const [cards, setCards] = useLocalStorage('recommendinput', '');
-  const [cube, setCube] = useState([]);
   const [adds, setAdds] = useState([]);
   const [removes, setRemoves] = useState([]);
+  const [loading, setLoading] = useState(false);
 
   const fetchCubes = useCallback(async () => {
-    const response = await fetch('/api/cards', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ cards: cards.split('\n') }),
-    });
-    const json = await response.json();    
+    setLoading(true);
+    try {
+      const cubeNames = cards.split('\n').map(s => s.trim()).filter(Boolean);
 
-    setCube(json.cards);
+      const response = await fetch('/api/recommend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cards: cubeNames }),
+      });
+      const json = await response.json();
 
-    const response2 = await fetch('/api/recommend', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ cards: json.cards.map(card => card.name) }),
-    });
-
-    const json2 = await response2.json();
-
-    setAdds(json2.adds);
-    setRemoves(json2.removes);
+      setAdds(json.adds);
+      setRemoves(json.removes);
+    } finally {
+      setLoading(false);
+    }
   }, [cards]);
-  
 
   return (
-    <>
-    <h3>Recommend</h3>
-    <Row>
-      <Col xs="6">
-        <textarea
-          className="form-control"
-          rows="10"
-          value={cards}
-          onChange={e => setCards(e.target.value)}
-        />
-        <Button block outline color="primary" className="mt-2" onClick={fetchCubes}>Fetch</Button>
+    <Row className="h-100 g-3">
+      <Col md="4" className="h-100 overflow-auto">
+        <Label className="fw-bold mb-1">Cube</Label>
+        <Input type="textarea" rows="18" value={cards} onChange={e => setCards(e.target.value)} />
+        <Button block color="primary" className="mt-3 w-100" onClick={fetchCubes} disabled={loading}>
+          {loading ? 'Fetching…' : 'Fetch'}
+        </Button>
       </Col>
-      <Col style={{ maxHeight:400, overflowY:'scroll' }} xs="6">
-        <Row>
-          {cube.map((card, index) => (
-            <Col key={`${card.name}-${index}`} xs="3">
-              <CardItem card={card} />
-            </Col>
-          ))}
+      <Col md="8" className="h-100 overflow-auto">
+        <Row className="g-3">
+          <Col md="6">
+            <h5>Recommended Adds</h5>
+            {adds.length === 0 && <div className="text-muted small">No results yet.</div>}
+            {adds.map((card, i) => (
+              <ResultRow key={`add-${card.name}-${i}`} index={i} card={card} />
+            ))}
+          </Col>
+          <Col md="6">
+            <h5>Recommended Removes</h5>
+            {removes.length === 0 && <div className="text-muted small">No results yet.</div>}
+            {removes.map((card, i) => (
+              <ResultRow key={`rem-${card.name}-${i}`} index={i} card={card} ratingFormat="inverse" />
+            ))}
+          </Col>
         </Row>
       </Col>
-      <Col xs="6">
-        <h4>Recommended Adds</h4>        
-          {adds.map((card, index) => (
-            <Card key={`${card.name}-${index}`} className="mb-2">
-              <CardBody>
-                <img src={card.image} alt={card.name} />
-                {' '}{index+1}. {card.name} - {Math.round(card.rating * 10000) / 100}%
-              </CardBody>
-            </Card>
-          ))}
-      </Col>
-      <Col xs="6">
-        <h4>Recommended Removes</h4>
-          {removes.map((card, index) => (
-            <Card key={`${card.name}-${index}`} className="mb-2">
-              <CardBody>
-                <img src={card.image} alt={card.name} />
-                {' '}{index+1}. {card.name} - {Math.round((1-card.rating) * 10000) / 100}%
-              </CardBody>
-            </Card>
-          ))}
-      </Col>
     </Row>
-    </>
   );
 }
 

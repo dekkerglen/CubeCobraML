@@ -6,6 +6,7 @@ The second CLI argument now means *steps per epoch* (was “num_batches”).
 import os
 import sys
 
+import tensorflow as tf
 from tensorflow.keras.metrics import TopKCategoricalAccuracy
 
 from ccml.data import build_dataset
@@ -18,6 +19,19 @@ epochs = int(sys.argv[1])
 batch_size = int(sys.argv[2])
 continue_flag = sys.argv[3].lower() == "true"
 primary_stream = sys.argv[4].lower()
+
+# Check GPU availability
+gpus = tf.config.list_physical_devices('GPU')
+print("\n" + "=" * 70)
+if gpus:
+    print("🚀 GPU DETECTED AND ENABLED FOR TRAINING 🚀")
+    for gpu in gpus:
+        print(f"   Using: {gpu.name}")
+    print("=" * 70 + "\n")
+else:
+    print("⚠️  WARNING: NO GPU FOUND - TRAINING WILL USE CPU ONLY")
+    print("   This will be significantly slower than GPU training.")
+    print("=" * 70 + "\n")
 
 dataset, num_cards, steps_per_epoch, epochs_final = build_dataset(
     cubes_path=os.path.join(DATA_DIR, "cubes"),

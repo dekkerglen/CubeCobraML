@@ -25,6 +25,9 @@ const translateCard = (card) => {
   }
 }
 
+const namesToOracles = (cards) =>
+  cards.filter(card => card.toLowerCase() in oracleByName).map(card => oracleByName[card.toLowerCase()]);
+
 app.post("/api/cards", (req, res) => {
   const { cards } = req.body;
 
@@ -53,11 +56,12 @@ app.post("/api/recommend", (req, res) => {
 });
 
 app.post("/api/deckbuild", (req, res) => {
-  const { cards } = req.body;
+  const { cards, cube = [] } = req.body;
 
-  const oracles = cards.filter(card => card.toLowerCase() in oracleByName).map(card => oracleByName[card.toLowerCase()]);
+  const oracles = namesToOracles(cards);
+  const cubeOracles = namesToOracles(cube);
 
-  const recommendations = ml.deckbuild(oracles);
+  const recommendations = ml.deckbuild(oracles, cubeOracles);
 
   res.json({
     mainboard: recommendations.mainboard.map((card) => ({
@@ -72,12 +76,13 @@ app.post("/api/deckbuild", (req, res) => {
 });
 
 app.post("/api/draft", (req, res) => {
-  const { pack, pool } = req.body;
+  const { pack, pool, cube = [], landPct = 0, nonlandPct = 0 } = req.body;
 
-  const packOracles = pack.filter(card => card.toLowerCase() in oracleByName).map(card => oracleByName[card.toLowerCase()]);
-  const poolOracles = pool.filter(card => card.toLowerCase() in oracleByName).map(card => oracleByName[card.toLowerCase()]);
+  const packOracles = namesToOracles(pack);
+  const poolOracles = namesToOracles(pool);
+  const cubeOracles = namesToOracles(cube);
 
-  const recommendations = ml.draft(packOracles, poolOracles);
+  const recommendations = ml.draft(packOracles, poolOracles, cubeOracles, landPct, nonlandPct);
 
   res.json({
     picks: recommendations.map((card) => ({
@@ -88,11 +93,12 @@ app.post("/api/draft", (req, res) => {
 });
 
 app.post("/api/rotodraft", (req, res) => {
-  const { pack, pool } = req.body;
+  const { pool, cube = [], landPct = 0, nonlandPct = 0 } = req.body;
 
-  const poolOracles = pool.filter(card => card.toLowerCase() in oracleByName).map(card => oracleByName[card.toLowerCase()]);
+  const poolOracles = namesToOracles(pool);
+  const cubeOracles = namesToOracles(cube);
 
-  const recommendations = ml.rotodraft(poolOracles, 250);
+  const recommendations = ml.rotodraft(poolOracles, 250, cubeOracles, landPct, nonlandPct);
 
   res.json({
     picks: recommendations.map((card) => ({

@@ -157,22 +157,43 @@ const processDecks = (oracleCount, cubeMap) => {
 
   const decks = [];
 
-  for (let i = 3139; i < deckFiles.length; i++) {
-    decks.push(...JSON.parse(fs.readFileSync(`${sourceDir}/decks/${deckFiles[i]}`, 'utf8'))
-      .filter((deck) => deck.mainboard.length > 0 || deck.sideboard.length > 0)
-      .map((deck) => ({
-        mainboard: deck.mainboard.filter((card) => !(deck.basics || []).includes(card)),
-        sideboard: deck.sideboard.filter((card) => !(deck.basics || []).includes(card)),
-        cube_cards: cubeMap[deck.cube] || [],
-      })));
+  // Minimum mainboard size to accept a deck. Smaller than this and it's
+  // garbage (token decks, art-card-only entries, etc.) that pollutes the
+  // adjacency matrix enough to break the cube recommender's regularization.
+  const MIN_MAINBOARD = 20;
 
-    for (let j = 0; j < decks.length; j++) {
-      for (let k = 0; k < decks[j].mainboard.length; k++) {
-        for (let l = k + 1; l < decks[j].mainboard.length; l++) {
-          incrementCorrelation(correlations, decks[j].mainboard[k], decks[j].mainboard[l], oracleCount);
+  for (let i = 0; i < deckFiles.length; i++) {
+    const newDecks = JSON.parse(fs.readFileSync(`${sourceDir}/decks/${deckFiles[i]}`, 'utf8'))
+      .map((deck) => {
+        const basics = deck.basics ? new Set(deck.basics) : null;
+        // Strip both basics and the -1 sentinels cobra's export uses for empty slots.
+        // Leaving -1 in caused the correlation loop to silently write to negative
+        // indices (dropped) and mirrored cells one row off — producing ghost rows
+        // and breaking the matrix's symmetry.
+        const keep = (card) => card !== -1 && !(basics && basics.has(card));
+        return {
+          mainboard: deck.mainboard.filter(keep),
+          sideboard: deck.sideboard.filter(keep),
+          cube_cards: cubeMap[deck.cube] || [],
+        };
+      })
+      .filter((deck) => deck.mainboard.length >= MIN_MAINBOARD);
+
+    for (let j = 0; j < newDecks.length; j++) {
+      const mb = newDecks[j].mainboard;
+      for (let k = 0; k < mb.length; k++) {
+        const a = mb[k];
+        const rowA = a * oracleCount;
+        for (let l = k + 1; l < mb.length; l++) {
+          const b = mb[l];
+          if (a === b) continue;
+          correlations[rowA + b]++;
+          correlations[b * oracleCount + a]++;
         }
       }
     }
+
+    decks.push(...newDecks);
 
     console.log(`\tProcessed ${i + 1} of ${deckFiles.length} deck files.`);
   }
@@ -231,12 +252,12 @@ const processPicks = (numOracles) => {
   // along with a deduplicated cubeInstances array per output batch.
   let trainPicks = [];
   let trainCubeInstances = [];  // deduplicated cube card lists for current batch
-  let trainCubeMap = {};        // JSON(cubeCards) → index into trainCubeInstances
+  let trainCubeMap = new Map(); // "fileIdx:srcCubeIdx" → index into trainCubeInstances
   let trainBatchIdx = 0;
 
   let testPicks = [];
   let testCubeInstances = [];
-  let testCubeMap = {};
+  let testCubeMap = new Map();
   let testBatchIdx = 0;
 
   const flushTrain = () => {
@@ -246,7 +267,7 @@ const processPicks = (numOracles) => {
     trainBatchIdx++;
     trainPicks = [];
     trainCubeInstances = [];
-    trainCubeMap = {};
+    trainCubeMap = new Map();
   };
 
   const flushTest = () => {
@@ -256,24 +277,15 @@ const processPicks = (numOracles) => {
     testBatchIdx++;
     testPicks = [];
     testCubeInstances = [];
-    testCubeMap = {};
+    testCubeMap = new Map();
   };
 
-  const getTrainCubeIdx = (cubeCards) => {
-    const key = JSON.stringify(cubeCards);
-    if (trainCubeMap[key] !== undefined) return trainCubeMap[key];
-    const idx = trainCubeInstances.length;
-    trainCubeInstances.push(cubeCards);
-    trainCubeMap[key] = idx;
-    return idx;
-  };
-
-  const getTestCubeIdx = (cubeCards) => {
-    const key = JSON.stringify(cubeCards);
-    if (testCubeMap[key] !== undefined) return testCubeMap[key];
-    const idx = testCubeInstances.length;
-    testCubeInstances.push(cubeCards);
-    testCubeMap[key] = idx;
+  const getCubeIdx = (map, instances, key, cubeCards) => {
+    const existing = map.get(key);
+    if (existing !== undefined) return existing;
+    const idx = instances.length;
+    instances.push(cubeCards);
+    map.set(key, idx);
     return idx;
   };
 
@@ -284,41 +296,54 @@ const processPicks = (numOracles) => {
       ? JSON.parse(fs.readFileSync(cubeInstancesPath, 'utf8'))
       : [];
 
-    const picks = JSON.parse(fs.readFileSync(`${sourceDir}/picks/${pickFiles[i]}`, 'utf8'))
-      .filter((pick) => 
-        pick.pack.filter((index) => index !== -1).filter((index) => index).length > 1
-         && pick.pool.filter((index) => index !== -1) 
-         && pick.pack.includes(pick.picked) 
-         && pick.picked !== -1
-         && pick.picked
-      )
-      .map((pick) => ({
-        pool: pick.pool.filter((card) => card !== pick.picked).filter((index) => index !== -1).filter((index) => index),
-        pick: pick.picked,
-        pack: pick.pack.filter((index) => index !== -1).filter((index) => index),
+    const rawPicks = JSON.parse(fs.readFileSync(`${sourceDir}/picks/${pickFiles[i]}`, 'utf8'));
+    const picks = [];
+    for (let p = 0; p < rawPicks.length; p++) {
+      const pick = rawPicks[p];
+      if (!pick.picked || pick.picked === -1) continue;
+      if (!pick.pack.includes(pick.picked)) continue;
+
+      const cleanPack = [];
+      for (let q = 0; q < pick.pack.length; q++) {
+        const v = pick.pack[q];
+        if (v && v !== -1) cleanPack.push(v);
+      }
+      if (cleanPack.length <= 1) continue;
+
+      const picked = pick.picked;
+      const cleanPool = [];
+      for (let q = 0; q < pick.pool.length; q++) {
+        const v = pick.pool[q];
+        if (v && v !== -1 && v !== picked) cleanPool.push(v);
+      }
+
+      picks.push({
+        pool: cleanPool,
+        pick: picked,
+        pack: cleanPack,
         landCount: pick.landCount || 0,
         nonlandCount: pick.nonlandCount || 0,
-        _cubeCards: cubeInstances[pick.cubeCards] || [],
-      }));
-
-    const train = picks.slice(0, Math.floor(picks.length * (1 - TEST_PERCENT)));
-    const test = picks.slice(Math.floor(picks.length * (1 - TEST_PERCENT)));
-    
-    numPicks += train.length;
-
-    for (const p of train) {
-      const cubeIdx = getTrainCubeIdx(p._cubeCards);
-      trainPicks.push({ pool: p.pool, pick: p.pick, pack: p.pack, cube_cards_idx: cubeIdx, landCount: p.landCount, nonlandCount: p.nonlandCount });
-      if (trainPicks.length >= WRITE_BATCH_SIZE) {
-        flushTrain();
-      }
+        _srcCubeIdx: pick.cubeCards,
+      });
     }
 
-    for (const p of test) {
-      const cubeIdx = getTestCubeIdx(p._cubeCards);
-      testPicks.push({ pool: p.pool, pick: p.pick, pack: p.pack, cube_cards_idx: cubeIdx, landCount: p.landCount, nonlandCount: p.nonlandCount });
-      if (testPicks.length >= WRITE_BATCH_SIZE) {
-        flushTest();
+    const splitIdx = Math.floor(picks.length * (1 - TEST_PERCENT));
+    numPicks += splitIdx;
+
+    for (let t = 0; t < picks.length; t++) {
+      const p = picks[t];
+      const srcIdx = p._srcCubeIdx;
+      const cubeCards = cubeInstances[srcIdx] || [];
+      const key = `${i}:${srcIdx}`;
+
+      if (t < splitIdx) {
+        const cubeIdx = getCubeIdx(trainCubeMap, trainCubeInstances, key, cubeCards);
+        trainPicks.push({ pool: p.pool, pick: p.pick, pack: p.pack, cube_cards_idx: cubeIdx, landCount: p.landCount, nonlandCount: p.nonlandCount });
+        if (trainPicks.length >= WRITE_BATCH_SIZE) flushTrain();
+      } else {
+        const cubeIdx = getCubeIdx(testCubeMap, testCubeInstances, key, cubeCards);
+        testPicks.push({ pool: p.pool, pick: p.pick, pack: p.pack, cube_cards_idx: cubeIdx, landCount: p.landCount, nonlandCount: p.nonlandCount });
+        if (testPicks.length >= WRITE_BATCH_SIZE) flushTest();
       }
     }
 
@@ -349,7 +374,10 @@ const processOracleDict = () => {
   }
 
   // normalize elos
-  const maxElo = Math.max(...elos);
+  let maxElo = -Infinity;
+  for (let i = 0; i < elos.length; i++) {
+    if (elos[i] > maxElo) maxElo = elos[i];
+  }
 
   for (let i = 0; i < elos.length; i++) {
     elos[i] = elos[i] / maxElo;
