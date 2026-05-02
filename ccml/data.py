@@ -53,7 +53,8 @@ def _create_array_representation(indices: list[int], num_cards: int) -> np.ndarr
 def _augment_cube(
     indices: list[int],
     num_cards: int,
-    neg_sampler: np.ndarray,
+    pop_sampler: np.ndarray,
+    rare_sampler: np.ndarray,
     noise: float,
     noise_std: float,
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -62,9 +63,12 @@ def _augment_cube(
     Args:
         indices: the indices of the cards in this particular cube
         num_cards: the number of total cards that exist on the date of training
-        neg_sampler: probabilities such that when we fake add cards to the cube, we more often
-            add popular cards. This is what prevents the model from learning to always add
-            popular cards because we give it a bunch of examples of removing them.
+        pop_sampler: per-card weights ∝ frequency. Used to pick which cards to *add* to x_cube
+            as fake additions — biased toward popular cards so the model learns it's good to
+            remove popular cards from a cube.
+        rare_sampler: per-card weights ∝ 1 / frequency. Used to pick which cards to *cut* from
+            x_cube — biased toward less-popular cards so the model learns it's good to add
+            rare/synergistic cards to a cube.
         noise: the average percent of cards in the cube to have be fake
         noise_std: the standard deviation of the noise, so the recsys can't determine a fixed
             amount of cards to remove.
@@ -83,11 +87,12 @@ def _augment_cube(
     if flip_amount == 0:
         return cube, cube
 
-    flip_include = np.random.choice(includes, flip_amount, replace=False)
+    include_probs = rare_sampler[includes] / rare_sampler[includes].sum()
+    flip_include = np.random.choice(includes, flip_amount, p=include_probs, replace=False)
 
     excludes = np.setdiff1d(np.arange(num_cards, dtype=np.int32), includes, assume_unique=True)
-    probs = neg_sampler[excludes] / neg_sampler[excludes].sum()
-    flip_exclude = np.random.choice(excludes, flip_amount, p=probs, replace=False)
+    exclude_probs = pop_sampler[excludes] / pop_sampler[excludes].sum()
+    flip_exclude = np.random.choice(excludes, flip_amount, p=exclude_probs, replace=False)
 
     x_cube, y_cube = cube.copy(), cube.copy()
     x_cube[flip_include] = 0.0  # cut
@@ -161,7 +166,8 @@ def _noise_cube_context(
 def _cube_stream(
     files: list[str],
     num_cards: int,
-    neg_sampler: np.ndarray,
+    pop_sampler: np.ndarray,
+    rare_sampler: np.ndarray,
     noise: float,
     noise_std: float,
 ) -> Iterator[tuple[np.ndarray, np.ndarray]]:
@@ -169,7 +175,7 @@ def _cube_stream(
         np.random.shuffle(files)
         for fname in files:
             for indices in json.load(open(fname)):
-                yield _augment_cube(indices, num_cards, neg_sampler, noise, noise_std)
+                yield _augment_cube(indices, num_cards, pop_sampler, rare_sampler, noise, noise_std)
 
 
 def _deck_stream(
@@ -242,6 +248,41 @@ def _prepare_stream(
     return ds.repeat(rep).take(needed_examples).batch(batch_size, drop_remainder=True).prefetch(tf.data.AUTOTUNE)
 
 
+def _load_is_land_mask(num_cards: int, freq_path: str) -> np.ndarray:
+    """Return a (num_cards,) float32 vector with 1.0 at land indices, else 0.0.
+
+    Prefers `isLand.json` next to `freq_path` (written by process_data.js). If
+    that file is missing — e.g. data processed before this feature existed —
+    derive the mask on the fly from `raw_data/simpleCardDict.json` +
+    `raw_data/indexToOracleMap.json`. Returns all zeros only as a last resort
+    so the training loss term silently no-ops.
+    """
+    train_dir = os.path.dirname(freq_path)
+    is_land_path = os.path.join(train_dir, "isLand.json")
+    if os.path.exists(is_land_path):
+        return np.array(json.load(open(is_land_path)), dtype=np.float32)
+
+    # Fallback: derive from raw_data — best-effort.
+    raw_index_path = os.path.join("raw_data", "indexToOracleMap.json")
+    raw_dict_path = os.path.join("raw_data", "simpleCardDict.json")
+    if os.path.exists(raw_index_path) and os.path.exists(raw_dict_path):
+        i2o = json.load(open(raw_index_path))
+        cd = json.load(open(raw_dict_path))
+        mask = np.zeros(num_cards, dtype=np.float32)
+        for k, oracle in i2o.items():
+            idx = int(k)
+            if idx >= num_cards:
+                continue
+            t = (cd.get(oracle, {}).get("type") or "")
+            if "Land" in t:
+                mask[idx] = 1.0
+        print(f"[info] isLand.json missing — derived mask from raw_data ({int(mask.sum())} lands).")
+        return mask
+
+    print("[warn] no isLand mask available — land penalty will have no effect.")
+    return np.zeros(num_cards, dtype=np.float32)
+
+
 def build_dataset(
     cubes_path: str,
     decks_path: str,
@@ -258,7 +299,15 @@ def build_dataset(
     """Creates and returns all information needed to train the model."""
     card_freqs = json.load(open(freq_path))
     num_cards = len(card_freqs)
-    neg_sampler = np.array([1.0 / (f + 1) for f in card_freqs], dtype=np.float32)
+    # rare_sampler ∝ 1/freq — pick rare cards (used by _noise_cube_context, and by
+    # _augment_cube when choosing which real cube cards to *cut* from x_cube so the
+    # model learns to add rare/synergistic cards).
+    rare_sampler = np.array([1.0 / (f + 1) for f in card_freqs], dtype=np.float32)
+    # pop_sampler ∝ freq — pick popular cards (used by _augment_cube when choosing
+    # fake cards to *add* to x_cube so the model learns to remove popular cards).
+    pop_sampler = np.array([f + 1.0 for f in card_freqs], dtype=np.float32)
+    # _noise_cube_context still wants the original rare-weighted distribution
+    neg_sampler = rare_sampler
 
     corr_raw = np.array(json.load(open(correlations_path)), dtype=np.float32)
     y_corr = corr_raw.reshape((num_cards, num_cards))
@@ -291,7 +340,7 @@ def build_dataset(
         print(f"{k}: {humanize_number(v)}")
 
     cube_ds_raw = tf.data.Dataset.from_generator(
-        lambda: _cube_stream(cube_files, num_cards, neg_sampler, noise, noise_std),
+        lambda: _cube_stream(cube_files, num_cards, pop_sampler, rare_sampler, noise, noise_std),
         output_signature=(
             tf.TensorSpec((num_cards,), tf.float32),
             tf.TensorSpec((num_cards,), tf.float32),
@@ -348,4 +397,7 @@ def build_dataset(
     dataset = tf.data.Dataset.zip((cube_ds, deck_ds, pick_ds, corr_ds))
     dataset = dataset.map(_merge, num_parallel_calls=tf.data.AUTOTUNE)
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
-    return dataset, counts["card"], steps_per_epoch, epochs
+
+    is_land_mask = _load_is_land_mask(num_cards, freq_path)
+
+    return dataset, counts["card"], steps_per_epoch, epochs, is_land_mask

@@ -367,10 +367,17 @@ const processOracleDict = () => {
   const simpleCardDict = JSON.parse(fs.readFileSync(`${sourceDir}/simpleCardDict.json`, 'utf8'));
 
   const elos = [];
+  const isLand = [];
 
   for (let i = 0; i < indexToOracle.length; i++) {
-    const elo = simpleCardDict[indexToOracle[i]].elo || 1200;
+    const card = simpleCardDict[indexToOracle[i]] || {};
+    const elo = card.elo || 1200;
     elos.push(Math.log(elo / 600));
+    // Flag any card whose printed type contains "Land" (covers basics, non-basics,
+    // gates, dual-faced lands, etc.). Used by the training loss to penalize the
+    // draft head for picking lands once the drafter's land quota is full.
+    const type = (card.type || '').trim();
+    isLand.push(type.includes('Land') ? 1 : 0);
   }
 
   // normalize elos
@@ -385,6 +392,10 @@ const processOracleDict = () => {
 
   fs.writeFileSync(`${testDir}/elos.json`, JSON.stringify(elos));
   fs.writeFileSync(`${trainDir}/elos.json`, JSON.stringify(elos));
+  fs.writeFileSync(`${trainDir}/isLand.json`, JSON.stringify(isLand));
+  fs.writeFileSync(`${testDir}/isLand.json`, JSON.stringify(isLand));
+
+  console.log(`\tFlagged ${isLand.reduce((a, b) => a + b, 0)} of ${indexToOracle.length} cards as lands.`);
 
   return indexToOracle.length;
 }

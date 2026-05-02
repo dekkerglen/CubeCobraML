@@ -12,7 +12,7 @@ TRAIN_DIR = DATA_DIR / "train"
 BATCH_SIZE = 128
 PRIMARY = "pick"
 
-test_ds, card_count, steps, _ = build_dataset(
+test_ds, card_count, steps, _, _ = build_dataset(
     cubes_path=TEST_DIR / "cubes",
     decks_path=TEST_DIR / "decks",
     picks_path=TEST_DIR / "picks",

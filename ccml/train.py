@@ -33,7 +33,7 @@ else:
     print("   This will be significantly slower than GPU training.")
     print("=" * 70 + "\n")
 
-dataset, num_cards, steps_per_epoch, epochs_final = build_dataset(
+dataset, num_cards, steps_per_epoch, epochs_final, is_land_mask = build_dataset(
     cubes_path=os.path.join(DATA_DIR, "cubes"),
     decks_path=os.path.join(DATA_DIR, "decks"),
     picks_path=os.path.join(DATA_DIR, "picks"),
@@ -45,9 +45,20 @@ dataset, num_cards, steps_per_epoch, epochs_final = build_dataset(
     primary=primary_stream,
 )
 
+# Land-overdraft penalty: when landCount approaches/exceeds 1.0 (drafter has hit
+# expected land quota), the draft head is penalized for putting probability mass
+# on lands. Tunable via env vars without editing the script.
+land_penalty_weight = float(os.environ.get("LAND_PENALTY_WEIGHT", "20.0"))
+land_penalty_threshold = float(os.environ.get("LAND_PENALTY_THRESHOLD", "0.9"))
+print(f"Land penalty: weight={land_penalty_weight}, threshold={land_penalty_threshold}")
 
 print("Creating / loading model …")
-model = CubeCobraMLSystem(num_cards)
+model = CubeCobraMLSystem(
+    num_cards,
+    is_land_mask=is_land_mask,
+    land_penalty_weight=land_penalty_weight,
+    land_penalty_threshold=land_penalty_threshold,
+)
 
 losses = [
     "binary_crossentropy",
