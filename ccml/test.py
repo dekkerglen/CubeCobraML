@@ -1,3 +1,8 @@
+import os
+
+# Match train.py — keep the Keras-2 code path active under TF 2.16+.
+os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
+
 import numpy as np
 
 from ccml.data import build_dataset
@@ -12,6 +17,12 @@ TRAIN_DIR = DATA_DIR / "train"
 BATCH_SIZE = 128
 PRIMARY = "pick"
 
+# Must match training; test reads the same env knob so an off/on bisect run
+# evaluates with the matching code path.
+USE_CUBE_CONTEXT = os.environ.get("USE_CUBE_CONTEXT", "true").strip().lower() in (
+    "1", "true", "yes", "y", "on",
+)
+
 test_ds, card_count, steps, _, _ = build_dataset(
     cubes_path=TEST_DIR / "cubes",
     decks_path=TEST_DIR / "decks",
@@ -22,9 +33,10 @@ test_ds, card_count, steps, _, _ = build_dataset(
     batch_size=BATCH_SIZE,
     target_epochs=1,
     primary=PRIMARY,
+    use_cube_context=USE_CUBE_CONTEXT,
 )
 
-model = CubeCobraMLSystem(card_count)
+model = CubeCobraMLSystem(card_count, use_cube_context=USE_CUBE_CONTEXT)
 model.load_weights(MODEL_DIR)
 print(f"✔  Loaded weights from {MODEL_DIR}")
 

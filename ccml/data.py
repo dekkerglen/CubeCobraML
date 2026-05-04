@@ -182,15 +182,20 @@ def _deck_stream(
     files: list[str],
     num_cards: int,
     neg_sampler: np.ndarray,
+    use_cube_context: bool,
 ) -> Iterator[tuple[tuple[np.ndarray, np.ndarray], np.ndarray]]:
+    zeros_ctx = np.zeros(num_cards, dtype=np.float32)
     while True:
         np.random.shuffle(files)
         for fname in files:
             for rec in json.load(open(fname)):
                 main = _create_array_representation(rec["mainboard"], num_cards)
                 side = _create_array_representation(rec["sideboard"], num_cards)
-                cube_ctx = _create_array_representation(rec.get("cube_cards", []), num_cards)
-                cube_ctx = _noise_cube_context(cube_ctx, num_cards, neg_sampler)
+                if use_cube_context:
+                    cube_ctx = _create_array_representation(rec.get("cube_cards", []), num_cards)
+                    cube_ctx = _noise_cube_context(cube_ctx, num_cards, neg_sampler)
+                else:
+                    cube_ctx = zeros_ctx
                 yield (np.clip(main + side, 0.0, 1.0), cube_ctx), main
 
 
@@ -199,30 +204,32 @@ def _pick_stream(
     cube_instance_dir: str,
     num_cards: int,
     neg_sampler: np.ndarray,
-) -> Iterator[tuple[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray], np.ndarray]]:
+    use_cube_context: bool,
+) -> Iterator[tuple[tuple[np.ndarray, np.ndarray, np.ndarray], np.ndarray]]:
     """Stream picks, resolving cube_cards_idx from the parallel cubeInstances/ dir."""
+    zeros_ctx = np.zeros(num_cards, dtype=np.float32)
     while True:
         np.random.shuffle(pick_files)
         for fname in pick_files:
-            # Load the parallel cubeInstances file for this batch
-            ci_path = os.path.join(cube_instance_dir, os.path.basename(fname))
-            cube_instances: list[list[int]] = []
-            if os.path.exists(ci_path):
-                cube_instances = json.load(open(ci_path))
-
-            # Pre-convert cube instances to arrays once per file
-            ci_arrays = [_create_array_representation(ci, num_cards) for ci in cube_instances]
-            empty = np.zeros(num_cards, dtype=np.float32)
+            # Load the parallel cubeInstances file for this batch (only if needed).
+            ci_arrays: list[np.ndarray] = []
+            if use_cube_context:
+                ci_path = os.path.join(cube_instance_dir, os.path.basename(fname))
+                if os.path.exists(ci_path):
+                    cube_instances: list[list[int]] = json.load(open(ci_path))
+                    ci_arrays = [_create_array_representation(ci, num_cards) for ci in cube_instances]
 
             for rec in json.load(open(fname)):
                 pool = _create_array_representation(rec["pool"], num_cards)
                 pack = _create_array_representation(rec["pack"], num_cards)
                 pick = _create_array_representation([rec["pick"]], num_cards)
-                ci_idx = rec.get("cube_cards_idx")
-                cube_ctx = ci_arrays[ci_idx] if ci_idx is not None and ci_idx < len(ci_arrays) else empty
-                cube_ctx = _noise_cube_context(cube_ctx, num_cards, neg_sampler)
-                draft_counts = np.array([rec.get("landCount", 0.0), rec.get("nonlandCount", 0.0)], dtype=np.float32)
-                yield (pool, pack, cube_ctx, draft_counts), pick
+                if use_cube_context:
+                    ci_idx = rec.get("cube_cards_idx")
+                    cube_ctx = ci_arrays[ci_idx] if ci_idx is not None and ci_idx < len(ci_arrays) else zeros_ctx
+                    cube_ctx = _noise_cube_context(cube_ctx, num_cards, neg_sampler)
+                else:
+                    cube_ctx = zeros_ctx
+                yield (pool, pack, cube_ctx), pick
 
 
 def _corr_stream(x_eye: np.ndarray, y_softmax: np.ndarray) -> Iterator[tuple[np.ndarray, np.ndarray]]:
@@ -295,6 +302,7 @@ def build_dataset(
     primary: Literal["cube", "deck", "pick", "card"],
     noise: float = 0.20,
     noise_std: float = 0.1,
+    use_cube_context: bool = True,
 ):
     """Creates and returns all information needed to train the model."""
     card_freqs = json.load(open(freq_path))
@@ -348,24 +356,23 @@ def build_dataset(
     )
 
     deck_ds_raw = tf.data.Dataset.from_generator(
-        lambda: _deck_stream(deck_files, num_cards, neg_sampler),
+        lambda: _deck_stream(deck_files, num_cards, neg_sampler, use_cube_context),
         output_signature=(
             (
                 tf.TensorSpec((num_cards,), tf.float32),  # pool
-                tf.TensorSpec((num_cards,), tf.float32),  # cube_context
+                tf.TensorSpec((num_cards,), tf.float32),  # cube_context (zeros when off)
             ),
             tf.TensorSpec((num_cards,), tf.float32),      # mainboard
         ),
     )
 
     pick_ds_raw = tf.data.Dataset.from_generator(
-        lambda: _pick_stream(pick_files, cube_instances_path, num_cards, neg_sampler),
+        lambda: _pick_stream(pick_files, cube_instances_path, num_cards, neg_sampler, use_cube_context),
         output_signature=(
             (
                 tf.TensorSpec((num_cards,), tf.float32),  # pool
                 tf.TensorSpec((num_cards,), tf.float32),  # pack
-                tf.TensorSpec((num_cards,), tf.float32),  # cube_context
-                tf.TensorSpec((2,), tf.float32),           # draft_counts (landCount, nonlandCount)
+                tf.TensorSpec((num_cards,), tf.float32),  # cube_context (zeros when off)
             ),
             tf.TensorSpec((num_cards,), tf.float32),      # pick
         ),
@@ -387,10 +394,10 @@ def build_dataset(
     def _merge(cube, deck, pick, corr):
         x_cube, y_cube = cube
         (x_deck_pool, x_deck_cube_ctx), y_deck = deck
-        (pool, pack, cube_ctx, draft_counts), y_pick = pick
+        (pool, pack, cube_ctx), y_pick = pick
         x_corr, y_corr = corr
         return (
-            (x_cube, (x_deck_pool, x_deck_cube_ctx), (pool, pack, cube_ctx, draft_counts), x_corr),
+            (x_cube, (x_deck_pool, x_deck_cube_ctx), (pool, pack, cube_ctx), x_corr),
             (y_cube, y_deck, y_pick, y_corr),
         )
 

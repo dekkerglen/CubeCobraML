@@ -14,6 +14,11 @@ const oracleToIndex = Object.fromEntries(
 
 const numOracles = Object.keys(oracleToIndex).length;
 
+// USE_CUBE_CONTEXT must match the flag used at training time. When false, the
+// decoders were trained with a zero vector in place of the cube embedding and
+// we feed the same here at inference.
+const USE_CUBE_CONTEXT = process.env.USE_CUBE_CONTEXT !== 'false';
+
 let encoder;
 let recommend_decoder;
 let deckbuilder_decoder;
@@ -112,10 +117,15 @@ const deckbuild = (oracles, cubeOracles = []) => {
   }
 
   const poolVector = [encodeIndeces(oracles.map(oracle => oracleToIndex[oracle]))];
-  const cubeVector = [encodeIndeces(cubeOracles.map(oracle => oracleToIndex[oracle]))];
-
   const poolEncoded = encoder.predict(tf.tensor(poolVector));
-  const cubeEncoded = encoder.predict(tf.tensor(cubeVector));
+
+  let cubeEncoded;
+  if (USE_CUBE_CONTEXT) {
+    const cubeVector = [encodeIndeces(cubeOracles.map(oracle => oracleToIndex[oracle]))];
+    cubeEncoded = encoder.predict(tf.tensor(cubeVector));
+  } else {
+    cubeEncoded = tf.zerosLike(poolEncoded);
+  }
   const combined = tf.concat([poolEncoded, cubeEncoded], -1);
 
   const recommendations = deckbuilder_decoder.predict([combined]);
@@ -145,19 +155,23 @@ const deckbuild = (oracles, cubeOracles = []) => {
   }
 }
 
-const draftDecoderInput = (poolOracles, cubeOracles, landPct, nonlandPct) => {
+const draftDecoderInput = (poolOracles, cubeOracles) => {
   const poolVector = [encodeIndeces(poolOracles.map(oracle => oracleToIndex[oracle]))];
-  const cubeVector = [encodeIndeces(cubeOracles.map(oracle => oracleToIndex[oracle]))];
-
   const poolEncoded = encoder.predict(tf.tensor(poolVector));
-  const cubeEncoded = encoder.predict(tf.tensor(cubeVector));
-  const counts = tf.tensor([[landPct, nonlandPct]]);
 
-  return tf.concat([poolEncoded, cubeEncoded, counts], -1);
+  let cubeEncoded;
+  if (USE_CUBE_CONTEXT) {
+    const cubeVector = [encodeIndeces(cubeOracles.map(oracle => oracleToIndex[oracle]))];
+    cubeEncoded = encoder.predict(tf.tensor(cubeVector));
+  } else {
+    cubeEncoded = tf.zerosLike(poolEncoded);
+  }
+
+  return tf.concat([poolEncoded, cubeEncoded], -1);
 };
 
-const draft = (pack, pool, cubeOracles = [], landPct = 0, nonlandPct = 0) => {
-  const combined = draftDecoderInput(pool, cubeOracles, landPct, nonlandPct);
+const draft = (pack, pool, cubeOracles = []) => {
+  const combined = draftDecoderInput(pool, cubeOracles);
   const recommendations = draft_decoder.predict([combined]);
 
   const array = recommendations.dataSync();
@@ -183,8 +197,8 @@ const draft = (pack, pool, cubeOracles = [], landPct = 0, nonlandPct = 0) => {
 }
 
 
-const rotodraft = (pool, picks, cubeOracles = [], landPct = 0, nonlandPct = 0) => {
-  const combined = draftDecoderInput(pool, cubeOracles, landPct, nonlandPct);
+const rotodraft = (pool, picks, cubeOracles = []) => {
+  const combined = draftDecoderInput(pool, cubeOracles);
   const recommendations = draft_decoder.predict([combined]);
 
   const array = recommendations.dataSync();

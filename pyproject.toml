@@ -5,8 +5,9 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "numpy==1.23.5",
-    "tensorflow[and-cuda]>=2.13",
+    "numpy>=1.26,<2.0",
+    "tensorflow[and-cuda]>=2.16,<2.17",
+    "tf-keras>=2.16,<2.17",
     "tqdm>=4.67.1",
 ]
 

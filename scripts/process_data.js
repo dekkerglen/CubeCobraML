@@ -321,8 +321,6 @@ const processPicks = (numOracles) => {
         pool: cleanPool,
         pick: picked,
         pack: cleanPack,
-        landCount: pick.landCount || 0,
-        nonlandCount: pick.nonlandCount || 0,
         _srcCubeIdx: pick.cubeCards,
       });
     }
@@ -338,11 +336,11 @@ const processPicks = (numOracles) => {
 
       if (t < splitIdx) {
         const cubeIdx = getCubeIdx(trainCubeMap, trainCubeInstances, key, cubeCards);
-        trainPicks.push({ pool: p.pool, pick: p.pick, pack: p.pack, cube_cards_idx: cubeIdx, landCount: p.landCount, nonlandCount: p.nonlandCount });
+        trainPicks.push({ pool: p.pool, pick: p.pick, pack: p.pack, cube_cards_idx: cubeIdx });
         if (trainPicks.length >= WRITE_BATCH_SIZE) flushTrain();
       } else {
         const cubeIdx = getCubeIdx(testCubeMap, testCubeInstances, key, cubeCards);
-        testPicks.push({ pool: p.pool, pick: p.pick, pack: p.pack, cube_cards_idx: cubeIdx, landCount: p.landCount, nonlandCount: p.nonlandCount });
+        testPicks.push({ pool: p.pool, pick: p.pick, pack: p.pack, cube_cards_idx: cubeIdx });
         if (testPicks.length >= WRITE_BATCH_SIZE) flushTest();
       }
     }
@@ -375,7 +373,7 @@ const processOracleDict = () => {
     elos.push(Math.log(elo / 600));
     // Flag any card whose printed type contains "Land" (covers basics, non-basics,
     // gates, dual-faced lands, etc.). Used by the training loss to penalize the
-    // draft head for picking lands once the drafter's land quota is full.
+    // draft head for picking a land when the human's true pick wasn't a land.
     const type = (card.type || '').trim();
     isLand.push(type.includes('Land') ? 1 : 0);
   }
