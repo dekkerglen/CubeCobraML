@@ -1,47 +1,168 @@
 import os
 
-# Keep TF 2.16+ on the Keras-2 code path — we subclass Model and override
-# save_weights/load_weights, which Keras 3 broke.
-os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
-
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
+from tensorflow.keras.initializers import Constant
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.models import Model, Sequential
+from tensorflow.keras.regularizers import l2 as l2_reg
+
+
+def _keras_path(stem: str) -> str:
+    return stem + ".keras"
+
+
+def _load_into(target: Sequential, path: str) -> None:
+    # Keras 3 forbids reassigning sub-models on a built parent layer, so we load
+    # into a temporary model and copy the weights — building `target` first if
+    # it hasn't been built yet so it has matching variables to receive them.
+    source = keras.models.load_model(path)
+    if not target.built:
+        target.build(source.input_shape)
+    target.set_weights(source.get_weights())
+
+
+@keras.utils.register_keras_serializable(package="ccml")
+class MultiHotEmbedding(keras.layers.Layer):
+    """Sparse-equivalent of `relu(multi_hot @ W + b)` computed by gather-sum.
+
+    For a multi-hot input, the dense matmul is literally the sum of the
+    kernel rows for the cards present — >99.8% of the FLOPs multiply zeros.
+    This layer takes padded int32 card-index arrays instead and gathers
+    those rows directly. The table has `vocab + 1` rows: the last row is
+    the padding sentinel, masked out of both the sum and the gradient.
+
+    `dense_call` computes the identical result from a dense multi-hot via
+    matmul against the same weights — used by the inference APIs so the
+    dashboard/TFJS export keep their dense signatures.
+    """
+
+    def __init__(self, vocab: int, units: int, **kwargs):
+        super().__init__(**kwargs)
+        self.vocab = int(vocab)
+        self.units = int(units)
+
+    def build(self, input_shape):
+        del input_shape
+        self.table = self.add_weight(
+            name="table",
+            shape=(self.vocab + 1, self.units),
+            initializer="glorot_uniform",
+            trainable=True,
+        )
+        self.bias = self.add_weight(
+            name="bias",
+            shape=(self.units,),
+            initializer="zeros",
+            trainable=True,
+        )
+
+    def call(self, indices):
+        # Keras 3 autocasts inputs to the layer's compute dtype (float32);
+        # cast back — index values are exact well below float32's 2^24 limit.
+        indices = tf.cast(indices, tf.int32)
+        mask = tf.cast(tf.not_equal(indices, self.vocab), tf.float32)
+        emb = tf.gather(self.table, indices)
+        summed = tf.reduce_sum(emb * mask[:, :, None], axis=1)
+        return tf.nn.relu(summed + self.bias)
+
+    def compute_output_shape(self, input_shape):
+        # Input is int32 indices (B, L); output is float32 (B, units). Keras 3
+        # can't trace this dtype change symbolically without the hint.
+        return (input_shape[0], self.units)
+
+    def dense_call(self, x):
+        return tf.nn.relu(tf.matmul(x, self.table[: self.vocab]) + self.bias)
+
+    def get_config(self):
+        return {**super().get_config(), "vocab": self.vocab, "units": self.units}
 
 
 class Encoder(Model):
-    def __init__(self, name):
+    def __init__(self, name, num_cards):
         super().__init__()
+        self.num_cards = int(num_cards)
         self.model = Sequential(
             [
-                Dense(512, activation="relu", name=name + "_e1"),
+                MultiHotEmbedding(num_cards, 512, name=name + "_e1"),
                 Dense(256, activation="relu", name=name + "_e3"),
                 Dense(128, activation="linear", name=name + "_bottleneck"),
             ]
         )
 
     def call(self, x):
-        return self.model(x)
+        # Integer input = padded card-index arrays (training path);
+        # float input = dense multi-hot (inference APIs, dashboard, export).
+        # Same weights, identical math either way.
+        if x.dtype.is_integer:
+            return self.model(x)
+        # The dense path calls the embedding layer's method directly, which
+        # bypasses Keras's build-on-call — make sure the weights exist first.
+        self._build_layers()
+        embed, hidden, bottleneck = self.model.layers
+        return bottleneck(hidden(embed.dense_call(x)))
+
+    def _build_layers(self):
+        if not self.model.built:
+            self.model(tf.zeros((1, 1), dtype=tf.int32))
 
     def save_weights(self, filename):
-        print("Saving weights to " + filename)
-        self.model.save(filename)
+        path = _keras_path(filename)
+        print("Saving weights to " + path)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        self._build_layers()
+        self.model.save(path)
 
     def load_weights(self, filename):
-        self.model = keras.models.load_model(filename)
+        """Loads both v3 ckpts (MultiHotEmbedding table) and legacy ckpts
+        (Dense first layer): a legacy `(vocab, 512)` kernel is copied into
+        `table[:vocab]` with a zeroed sentinel row — bit-identical behavior
+        on the dense path, so old runs stay comparable in the dashboard."""
+        source = keras.models.load_model(_keras_path(filename))
+        weights = source.get_weights()
+        self._build_layers()
+        expected_rows = self.num_cards + 1
+        if weights and weights[0].shape[0] == expected_rows - 1:
+            kernel = weights[0]
+            sentinel = np.zeros((1, kernel.shape[1]), dtype=kernel.dtype)
+            weights[0] = np.vstack([kernel, sentinel])
+        self.model.set_weights(weights)
 
 
 class Decoder(Model):
-    def __init__(self, name, output_dim, output_act):
+    def __init__(
+        self,
+        name,
+        output_dim,
+        output_act,
+        output_bias_init: np.ndarray | None = None,
+        output_kernel_l2: float = 0.0,
+    ):
         super().__init__()
+
+        # Output layer kwargs: optionally seed bias with a per-card prior
+        # (e.g. log marginal pick rate) and/or apply L2 to the per-card output
+        # kernel — both target rare-card miscalibration without changing shapes.
+        out_kwargs: dict = {}
+        if output_bias_init is not None:
+            bias_vals = np.asarray(output_bias_init, dtype=np.float32)
+            if bias_vals.shape != (output_dim,):
+                raise ValueError(f"output_bias_init shape {bias_vals.shape} != ({output_dim},)")
+            out_kwargs["bias_initializer"] = Constant(bias_vals)
+        if output_kernel_l2 > 0.0:
+            out_kwargs["kernel_regularizer"] = l2_reg(output_kernel_l2)
 
         self.model = Sequential(
             [
                 Dense(256, activation="relu", name=name + "_d1"),
                 Dense(512, activation="relu", name=name + "_d3"),
-                Dense(output_dim, activation=output_act, name=name + "_reconstruction"),
+                Dense(
+                    output_dim,
+                    activation=output_act,
+                    name=name + "_reconstruction",
+                    **out_kwargs,
+                ),
             ]
         )
 
@@ -49,83 +170,73 @@ class Decoder(Model):
         return self.model(x)
 
     def save_weights(self, filename):
-        print("Saving weights to " + filename)
-        self.model.save(filename)
+        path = _keras_path(filename)
+        print("Saving weights to " + path)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        self.model.save(path)
 
     def load_weights(self, filename):
-        print("Loading weights from " + filename)
-        self.model = keras.models.load_model(filename)
+        path = _keras_path(filename)
+        print("Loading weights from " + path)
+        _load_into(self.model, path)
 
 
 class CubeCobraMLSystem(Model):
     def __init__(
         self,
         num_cards,
-        is_land_mask=None,
-        use_cube_context: bool = True,
+        draft_bias_init: np.ndarray | None = None,
+        draft_output_l2: float = 0.0,
     ):
         super().__init__()
-        self.use_cube_context = bool(use_cube_context)
-
-        self.encoder = Encoder("encoder")
-        self.cube_decoder = Decoder("recommend", num_cards, tf.nn.sigmoid)
-        self.draft_decoder = Decoder("draft", num_cards, "linear")
-        self.deck_build_decoder = Decoder("deck_build", num_cards, tf.nn.sigmoid)
-        self.correlation_decoder = Decoder("correlate", num_cards, tf.nn.softmax)
-
-        if is_land_mask is None:
-            is_land_mask = np.zeros(num_cards, dtype=np.float32)
-        # (1, num_cards) so it broadcasts cleanly over a (batch, num_cards) tensor.
-        self.is_land_mask = tf.constant(
-            np.asarray(is_land_mask, dtype=np.float32).reshape(1, -1)
+        self.encoder = Encoder("encoder", num_cards)
+        self.cube_decoder = Decoder("recommend", num_cards, "sigmoid")
+        # Draft head: pool through the SHARED encoder, decoded to per-card
+        # logits. draft_bias_init seeds per-card logit bias from the log
+        # marginal pick rate (helps prevent rare-card overpick).
+        self.draft_decoder = Decoder(
+            "draft",
+            num_cards,
+            "linear",
+            output_bias_init=draft_bias_init,
+            output_kernel_l2=draft_output_l2,
         )
+        # Deck head: pool embedding only (128-dim input), same as prod.
+        self.deck_build_decoder = Decoder("deck_build", num_cards, "sigmoid")
+        self.correlation_decoder = Decoder("correlate", num_cards, "softmax")
 
     # inputs is:
-    #   [cubes,
-    #    (deck_pools, deck_cube_ctx),
-    #    (draft_pools, draft_packs, draft_cube_ctx),
-    #    cards]
-    # When use_cube_context=False, the deck_cube_ctx / draft_cube_ctx slots
-    # still exist (the dataset always emits them), but we ignore their values
-    # in the decoder branches and feed the pool embedding alone.
+    #   [cubes,                        # for cube_decoder (recsys task)
+    #    deck_pools,                   # for deck_build_decoder
+    #    (draft_pools, draft_packs),   # for draft head — packs stay DENSE
+    #    cards]                        # for correlation_decoder
+    #
+    # The training pipeline feeds padded int32 card-index arrays for cubes,
+    # deck_pools, draft_pools, and cards (the encoder dispatches on dtype);
+    # draft_packs is a dense float mask because the softmax masking needs it.
+    # Inference callers keep passing dense multi-hot floats everywhere.
     def call(self, inputs, training=None):
         cube_pred = self.recommend(inputs[0], training=training)
-        deck_pred = self.deck_build(inputs[1][0], inputs[1][1], training=training)
-        draft_pred = self.draft(
-            inputs[2][0], inputs[2][1], inputs[2][2], training=training
-        )
+        deck_pred = self.deck_build(inputs[1], training=training)
+        draft_pred = self.draft(inputs[2][0], inputs[2][1], training=training)
         corr_pred = self.correlate(inputs[3], training=training)
         return [cube_pred, deck_pred, draft_pred, corr_pred]
 
-    @tf.function
     def recommend(self, cubes, training=None):
         embedding = self.encoder(cubes, training=training)
         return self.cube_decoder(embedding, training=training)
 
-    @tf.function
-    def deck_build(self, pools, cube_context, training=None):
+    def deck_build(self, pools, training=None):
         pool_embedding = self.encoder(pools, training=training)
-        if self.use_cube_context:
-            cube_embedding = self.encoder(cube_context, training=training)
-            combined = tf.concat([pool_embedding, cube_embedding], axis=-1)
-        else:
-            # Match the 256-dim shape decoders expect by duplicating the pool embedding.
-            combined = tf.concat([pool_embedding, tf.zeros_like(pool_embedding)], axis=-1)
-        return self.deck_build_decoder(combined, training=training)
+        return self.deck_build_decoder(pool_embedding, training=training)
 
-    @tf.function
-    def draft(self, pools, packs, cube_context, training=None):
+    def draft(self, pools, packs, training=None):
+        """Public inference API: returns pack-masked softmax over cards."""
         pool_embedding = self.encoder(pools, training=training)
-        if self.use_cube_context:
-            cube_embedding = self.encoder(cube_context, training=training)
-            combined = tf.concat([pool_embedding, cube_embedding], axis=-1)
-        else:
-            combined = tf.concat([pool_embedding, tf.zeros_like(pool_embedding)], axis=-1)
-        best_possible_picks = self.draft_decoder(combined, training=training)
+        logits = self.draft_decoder(pool_embedding, training=training)
         mask = 1e9 * (1 - packs)
-        return tf.nn.softmax(best_possible_picks * packs - mask)
+        return tf.nn.softmax(logits * packs - mask)
 
-    @tf.function
     def correlate(self, inputs, training=None):
         embedding = self.encoder(inputs, training=training)
         return self.correlation_decoder(embedding, training=training)
@@ -143,51 +254,3 @@ class CubeCobraMLSystem(Model):
         self.draft_decoder.load_weights(os.path.join(filename, "draft_decoder", "model"))
         self.deck_build_decoder.load_weights(os.path.join(filename, "deck_build_decoder", "model"))
         self.correlation_decoder.load_weights(os.path.join(filename, "correlation_decoder", "model"))
-
-    # ── lightweight checkpoint format ─────────────────────────────────────────
-    # save_weights above writes a full SavedModel per sub-model (graph + sigs +
-    # weights). That's necessary for the final tfjs conversion, but it makes
-    # in-training checkpoints absurdly large. The methods below write only the
-    # raw parameter tensors as .h5 — orders of magnitude smaller, fine for
-    # rollback/inspection. They work because each sub-model's architecture is
-    # deterministic (defined in __init__), so we can rebuild the graph and
-    # load only the weights.
-    _SUBMODELS = ("encoder", "cube_decoder", "draft_decoder", "deck_build_decoder", "correlation_decoder")
-
-    def save_checkpoint(self, dirpath):
-        os.makedirs(dirpath, exist_ok=True)
-        for name in self._SUBMODELS:
-            getattr(self, name).model.save_weights(os.path.join(dirpath, f"{name}.weights.h5"))
-
-    def load_checkpoint(self, dirpath):
-        # Sub-models are lazily built; do a dummy forward pass to materialize
-        # variables before loading. Caller is responsible for that — typically
-        # by running one batch of data, or by calling .build() with the right
-        # input shape if they know it.
-        for name in self._SUBMODELS:
-            getattr(self, name).model.load_weights(os.path.join(dirpath, f"{name}.weights.h5"))
-
-
-def make_draft_loss(is_land_mask: np.ndarray, land_penalty_weight: float):
-    """Build a custom loss for the draft head.
-
-    On top of categorical crossentropy, adds a penalty when the bot puts
-    probability mass on lands but the human's true pick was a non-land.
-    The natural pressure: the model has to learn *when* picking a land is
-    appropriate (because picking one when the human didn't always costs
-    extra), without collapsing onto "never pick lands".
-    """
-    mask = tf.constant(np.asarray(is_land_mask, dtype=np.float32).reshape(1, -1))
-    weight = float(land_penalty_weight)
-
-    def draft_loss(y_true, y_pred):
-        cce = tf.keras.losses.categorical_crossentropy(y_true, y_pred)
-        # 1.0 if the human picked a land, else 0.0. Per example, shape (batch,).
-        human_picked_land = tf.reduce_sum(y_true * mask, axis=-1)
-        # Total probability the bot put on lands. Shape (batch,).
-        bot_land_prob = tf.reduce_sum(y_pred * mask, axis=-1)
-        penalty = bot_land_prob * (1.0 - human_picked_land)
-        return cce + weight * penalty
-
-    draft_loss.__name__ = "draft_loss"
-    return draft_loss
