@@ -1,17 +1,25 @@
-"""
-Build a streaming `tf.data.Dataset` that yields exactly the same structure
-the old `DataGenerator` produced – but without ever materialising more than
-one micro-batch in RAM.
+"""Streaming `tf.data.Dataset` pipelines for training and validation.
 
-Every element is:
-    ([x_cubes,
-      x_decks,
-      (pool_vec, pack_vec),   # picks input
-      x_corr],
-     [y_cubes,
-      y_decks,
-      y_pick_vec,
-      y_corr])
+SPARSE PIPELINE: generators yield padded int32 card-index arrays (~1KB per
+record) instead of dense 37k-float one-hots (~150KB). Records stay sparse
+through repeat/shuffle/padded_batch — so the shuffle buffer holds indices,
+not megabytes — and a single post-batch `_merge` map densifies the targets
+(and the draft pack mask) with scatter ops. The encoder consumes the index
+arrays directly (see `MultiHotEmbedding`); identical math to the dense path.
+
+Every training element after `_merge` is:
+    ([cube_idx,                 # padded int32 (B, L) — encoder gathers
+      deck_pool_idx,
+      (pick_pool_idx, pack_mask_dense),  # pack mask stays dense for softmax masking
+      corr_idx],
+     [y_cube, y_deck, y_pick, y_corr],   # dense float (B, V), built post-batch
+     (ones, ones, w_pick, ones))         # per-output sample weights; only picks weighted
+
+Validation elements omit the sample weights (val is an unweighted
+measurement) and are fully deterministic — no augmentation, no shuffling.
+The stable val set produced by `scripts/process_data.js` is small enough
+(target ≤100k picks) to evaluate exhaustively every epoch, so val metrics
+are stable across epochs and trustworthy as a deployment gate.
 """
 
 import json
@@ -30,24 +38,28 @@ def _count_records(files: list[str]) -> int:
     total = 0
     print("Counting records in", len(files), "files")
     for f in tqdm(files):
-        # every JSON file is a list [...]  – count its length quickly
         with open(f) as fh:
             total += len(json.load(fh))
     return total
-
-
-def _repeat_take(ds: tf.data.Dataset, n_batches: int, n_epoch_batches: int):
-    """Repeat a dataset just enough times to guarantee that no data gets dropped"""
-    if n_batches == 0:
-        raise ValueError("batch_size is larger than this dataset")
-    rep = math.ceil(n_epoch_batches / n_batches)
-    return ds.repeat(rep).take(n_epoch_batches)
 
 
 def _create_array_representation(indices: list[int], num_cards: int) -> np.ndarray:
     vec = np.zeros(num_cards, dtype=np.float32)
     vec[indices] = 1.0
     return vec
+
+
+def _idx(indices) -> np.ndarray:
+    """Unique sorted int32 index array — the sparse equivalent of
+    `_create_array_representation` (whose `vec[indices] = 1.0` dedupes
+    duplicate card copies implicitly).
+
+    Drops negative indices: process_data.js emits -1 for cube cards missing
+    from the oracle vocabulary. The legacy dense path silently aliased those
+    onto the LAST card via numpy negative indexing — a bug; scatter_nd
+    rejects them loudly, so we filter instead."""
+    arr = np.unique(np.asarray(indices, dtype=np.int32))
+    return arr[arr >= 0]
 
 
 def _augment_cube(
@@ -58,7 +70,9 @@ def _augment_cube(
     noise: float,
     noise_std: float,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """create a vector representation of the cube alongside a noisy version for the recsys
+    """Create index-array representations of the cube alongside a noisy
+    version for the recsys. Same augmentation semantics as the dense-vector
+    version, now returning sparse index arrays.
 
     Args:
         indices: the indices of the cards in this particular cube
@@ -70,22 +84,19 @@ def _augment_cube(
             x_cube — biased toward less-popular cards so the model learns it's good to add
             rare/synergistic cards to a cube.
         noise: the average percent of cards in the cube to have be fake
-        noise_std: the standard deviation of the noise, so the recsys can't determine a fixed
-            amount of cards to remove.
+        noise_std: the standard deviation of the noise
 
     Returns:
-        x_cube: the cube with some cards removed and some added
-        y_cube: a subset of the original cube list, where 25% of the cards removed from x_cube are also removed.
+        x_cube: index array — the cube with some cards removed and some added
+        y_cube: index array — the original cube minus 25% of the cards removed from x_cube
     """
-    cube = _create_array_representation(indices, num_cards)
-
-    includes = np.array(indices, dtype=np.int32)
+    includes = _idx(indices)
     size = len(includes)
 
     noise_level = np.clip(np.random.normal(noise, noise_std), a_min=0.05, a_max=0.8)
     flip_amount = int(size * noise_level)
     if flip_amount == 0:
-        return cube, cube
+        return includes, includes
 
     include_probs = rare_sampler[includes] / rare_sampler[includes].sum()
     flip_include = np.random.choice(includes, flip_amount, p=include_probs, replace=False)
@@ -94,69 +105,11 @@ def _augment_cube(
     exclude_probs = pop_sampler[excludes] / pop_sampler[excludes].sum()
     flip_exclude = np.random.choice(excludes, flip_amount, p=exclude_probs, replace=False)
 
-    x_cube, y_cube = cube.copy(), cube.copy()
-    x_cube[flip_include] = 0.0  # cut
-    x_cube[flip_exclude] = 1.0  # add
-    # what this does is select a random 25 percent of the cards that were cut and also
-    # remove them from the y_cube representation. I honestly don't remembery why I (@RyanSaxe)
-    # did this originally. I think maybe there were some benefits of not always having the
-    # the same exact y_cube representation to prevent overfitting. You could experiment
-    # with removing this line and seeing if it helps or hurts the model.
+    x_cube = np.union1d(np.setdiff1d(includes, flip_include), flip_exclude).astype(np.int32)
     y_flip_include = np.random.choice(flip_include, flip_amount // 4, replace=False)
-    y_cube[y_flip_include] = 0.0
+    y_cube = np.setdiff1d(includes, y_flip_include).astype(np.int32)
 
     return x_cube, y_cube
-
-
-def _noise_cube_context(
-    cube_ctx: np.ndarray,
-    num_cards: int,
-    neg_sampler: np.ndarray,
-    no_context_prob: float = 0.5,
-    noise: float = 0.10,
-    noise_std: float = 0.05,
-) -> np.ndarray:
-    """Apply noise to cube context for generalization.
-    
-    Args:
-        cube_ctx: binary vector representing cube cards
-        num_cards: total number of cards
-        neg_sampler: probability distribution for sampling cards (inverse frequency)
-        no_context_prob: probability of returning all zeros (no context)
-        noise: average percent of cards to flip on (that aren't present)
-        noise_std: standard deviation of noise level
-        
-    Returns:
-        Noised cube context vector
-    """
-    # 50% of the time, provide no context at all
-    if np.random.random() < no_context_prob:
-        return np.zeros(num_cards, dtype=np.float32)
-    
-    # Otherwise, add random cards that aren't present
-    present = np.where(cube_ctx > 0.5)[0]
-    excludes = np.setdiff1d(np.arange(num_cards, dtype=np.int32), present, assume_unique=True)
-    
-    if len(excludes) == 0:
-        return cube_ctx.copy()
-    
-    # Sample how many fake cards to add
-    cube_size = len(present) if len(present) > 0 else 360  # assume ~360 if empty
-    noise_level = np.clip(np.random.normal(noise, noise_std), a_min=0.0, a_max=0.3)
-    add_amount = int(cube_size * noise_level)
-    
-    if add_amount == 0:
-        return cube_ctx.copy()
-    
-    # Sample cards weighted by inverse frequency (like recommender noising)
-    probs = neg_sampler[excludes] / neg_sampler[excludes].sum()
-    add_amount = min(add_amount, len(excludes))
-    fake_cards = np.random.choice(excludes, add_amount, p=probs, replace=False)
-    
-    noised_ctx = cube_ctx.copy()
-    noised_ctx[fake_cards] = 1.0
-    
-    return noised_ctx
 
 
 # -----------------------------------------------Stream Functions-----------------------------------------------
@@ -181,62 +134,141 @@ def _cube_stream(
 def _deck_stream(
     files: list[str],
     num_cards: int,
-    neg_sampler: np.ndarray,
-    use_cube_context: bool,
-) -> Iterator[tuple[tuple[np.ndarray, np.ndarray], np.ndarray]]:
-    zeros_ctx = np.zeros(num_cards, dtype=np.float32)
+) -> Iterator[tuple[np.ndarray, np.ndarray]]:
+    """Stream decks for the deck-build head: (pool_idx, mainboard_idx).
+
+    The deck record's `cube_cards` field stays on disk for the dashboard but
+    is no longer read — the v3 deck head takes the pool embedding only.
+    """
+    del num_cards
     while True:
         np.random.shuffle(files)
         for fname in files:
             for rec in json.load(open(fname)):
-                main = _create_array_representation(rec["mainboard"], num_cards)
-                side = _create_array_representation(rec["sideboard"], num_cards)
-                if use_cube_context:
-                    cube_ctx = _create_array_representation(rec.get("cube_cards", []), num_cards)
-                    cube_ctx = _noise_cube_context(cube_ctx, num_cards, neg_sampler)
-                else:
-                    cube_ctx = zeros_ctx
-                yield (np.clip(main + side, 0.0, 1.0), cube_ctx), main
+                main = _idx(rec["mainboard"])
+                pool = np.union1d(main, _idx(rec["sideboard"])).astype(np.int32)
+                yield pool, main
+
+
+def _make_pick_target(picked_idx: int, pack_idxs: list[int], num_cards: int, label_smoothing: float) -> np.ndarray:
+    """Pack-targeted label smoothing (dense reference implementation).
+
+    The training pipeline now builds this target with scatter ops inside the
+    post-batch `_merge` map (see `_densify_pick_targets`); this function is
+    kept as the executable spec the TF version is verified against.
+
+    Hard one-hot target gives non-picked pack cards target=0, which lets the
+    model collapse their logits arbitrarily low — even for cards humans pick
+    often. Distributing `label_smoothing` mass uniformly across the pack keeps
+    every pack card with target ≥ ε/K, anchoring their logits.
+
+      target[picked]      = (1 - ε) + ε/K
+      target[other pack]  = ε/K
+      target[not in pack] = 0
+
+    With label_smoothing=0 this collapses to the original one-hot.
+    """
+    target = np.zeros(num_cards, dtype=np.float32)
+    if label_smoothing > 0 and len(pack_idxs) > 1:
+        per = label_smoothing / len(pack_idxs)
+        for c in pack_idxs:
+            target[c] = per
+        target[picked_idx] += 1.0 - label_smoothing
+    else:
+        target[picked_idx] = 1.0
+    return target
+
+
+def _pack_position_weight(pack_size: int, pack_start: int, power: float) -> float:
+    """Sample weight by position within the pack.
+
+    Raw fraction f = (K−1)/(pack_start−1) is 1.0 at the pack's first pick and
+    0.0 at the forced last pick; w = f^power shapes the decay. power=0.5
+    (sqrt) keeps mid-pack picks valuable — linear (power=1.0) would claim
+    "halfway through the pack matters half as much as P1P1," which is wrong.
+    Normalizing by the pack's own starting size makes weights comparable
+    across drafts with different pack sizes.
+    """
+    if pack_start <= 1:
+        return 0.0
+    f = (pack_size - 1) / (pack_start - 1)
+    if f <= 0.0:
+        return 0.0
+    return float(f**power)
+
+
+def _pick_file_records(
+    fname: str,
+    weighting: bool,
+    weight_power: float,
+) -> Iterator[tuple[np.ndarray, np.ndarray, np.int32, np.int32, np.float32]]:
+    """Yield (pool_idx, pack_idx, picked, pack_len_raw, weight) for one pick
+    file, in file order. `pack_len_raw` is the pack size INCLUDING duplicate
+    copies — the label-smoothing denominator and weight detector use it,
+    while `pack_idx` is unique'd for the scatter ops.
+
+    Pack-boundary detection relies on the file's per-session sequential
+    order (process_data.js preserves it): a new session starts when the pool
+    is empty; a new pack within a session starts when the pack grows.
+    """
+    prev_pack_size = 0
+    pack_start = 1
+    for rec in json.load(open(fname)):
+        pack_size = len(rec["pack"])
+        if len(rec["pool"]) == 0 or pack_size > prev_pack_size:
+            pack_start = pack_size
+        prev_pack_size = pack_size
+        w = _pack_position_weight(pack_size, pack_start, weight_power) if weighting else 1.0
+
+        yield (_idx(rec["pool"]), _idx(rec["pack"]), np.int32(rec["pick"]), np.int32(pack_size), np.float32(w))
 
 
 def _pick_stream(
     pick_files: list[str],
-    cube_instance_dir: str,
-    num_cards: int,
-    neg_sampler: np.ndarray,
-    use_cube_context: bool,
-) -> Iterator[tuple[tuple[np.ndarray, np.ndarray, np.ndarray], np.ndarray]]:
-    """Stream picks, resolving cube_cards_idx from the parallel cubeInstances/ dir."""
-    zeros_ctx = np.zeros(num_cards, dtype=np.float32)
+    weighting: bool = True,
+    weight_power: float = 0.5,
+    interleave_files: int = 16,
+) -> Iterator[tuple[np.ndarray, np.ndarray, np.int32, np.int32, np.float32]]:
+    """Stream picks round-robin across `interleave_files` open files.
+
+    Consecutive records in one pick file come from the same draft, so a
+    sequential read feeds the shuffle buffer long correlated runs.
+    Interleaving spreads the buffer's contents across ~interleave_files
+    files, decorrelating batches. The pack-boundary state needed for sample
+    weights lives inside each `_pick_file_records` iterator, so interleaving
+    cannot corrupt per-draft detection.
+    """
+
+    def _open(fname: str):
+        return _pick_file_records(fname, weighting, weight_power)
+
     while True:
         np.random.shuffle(pick_files)
-        for fname in pick_files:
-            # Load the parallel cubeInstances file for this batch (only if needed).
-            ci_arrays: list[np.ndarray] = []
-            if use_cube_context:
-                ci_path = os.path.join(cube_instance_dir, os.path.basename(fname))
-                if os.path.exists(ci_path):
-                    cube_instances: list[list[int]] = json.load(open(ci_path))
-                    ci_arrays = [_create_array_representation(ci, num_cards) for ci in cube_instances]
-
-            for rec in json.load(open(fname)):
-                pool = _create_array_representation(rec["pool"], num_cards)
-                pack = _create_array_representation(rec["pack"], num_cards)
-                pick = _create_array_representation([rec["pick"]], num_cards)
-                if use_cube_context:
-                    ci_idx = rec.get("cube_cards_idx")
-                    cube_ctx = ci_arrays[ci_idx] if ci_idx is not None and ci_idx < len(ci_arrays) else zeros_ctx
-                    cube_ctx = _noise_cube_context(cube_ctx, num_cards, neg_sampler)
-                else:
-                    cube_ctx = zeros_ctx
-                yield (pool, pack, cube_ctx), pick
+        queue = list(pick_files)
+        open_iters = [_open(queue.pop()) for _ in range(min(interleave_files, len(queue)))]
+        while open_iters:
+            i = 0
+            while i < len(open_iters):
+                record = next(open_iters[i], None)
+                if record is None:
+                    if queue:
+                        open_iters[i] = _open(queue.pop())
+                    else:
+                        open_iters.pop(i)
+                    continue
+                yield record
+                i += 1
 
 
-def _corr_stream(x_eye: np.ndarray, y_softmax: np.ndarray) -> Iterator[tuple[np.ndarray, np.ndarray]]:
-    rows = x_eye.shape[0]
+def _corr_stream(y_softmax: np.ndarray) -> Iterator[tuple[np.ndarray, np.ndarray]]:
+    """Yield ([card_idx], dense_target_row). The input is a single-card
+    index array (the sparse identity row); the target row is inherently
+    dense real-valued, so it stays dense — the stream is already permuted
+    at the source, so it skips the tf.data shuffle buffer entirely."""
+    rows = y_softmax.shape[0]
     while True:
         for i in np.random.permutation(rows):
-            yield x_eye[i], y_softmax[i]
+            yield np.array([i], dtype=np.int32), y_softmax[i]
 
 
 def _prepare_stream(
@@ -245,56 +277,87 @@ def _prepare_stream(
     batch_size: int,
     steps_per_epoch: int,
     total_epochs: int,
+    padding_values,
+    shuffle: bool = True,
 ) -> tf.data.Dataset:
-    """
-    Repeat the *example* stream so that, after batching with
-    drop_remainder=True, it contains exactly steps_per_epoch × total_epochs
+    """Repeat + shuffle + padded-batch a training stream so the model sees
+    exactly `steps_per_epoch × total_epochs` batches.
+
+    Records are sparse index arrays (~1KB), so the shuffle buffer
+    (SHUFFLE_BUFFER, default 16384 — cheap to raise to 100k+) holds indices
+    instead of dense vectors. The shuffle breaks draft-level correlation:
+    consecutive records in a pick file come from the same draft (~45 picks).
+    `shuffle=False` is for streams already permuted at the source (corr).
     """
     needed_examples = steps_per_epoch * total_epochs * batch_size
     rep = math.ceil(needed_examples / record_count)
-    return ds.repeat(rep).take(needed_examples).batch(batch_size, drop_remainder=True).prefetch(tf.data.AUTOTUNE)
+    ds = ds.repeat(rep).take(needed_examples)
+    if shuffle:
+        shuffle_buffer = int(os.environ.get("SHUFFLE_BUFFER", "16384"))
+        ds = ds.shuffle(buffer_size=shuffle_buffer, reshuffle_each_iteration=True)
+    return ds.padded_batch(batch_size, padding_values=padding_values, drop_remainder=True).prefetch(tf.data.AUTOTUNE)
 
 
-def _load_is_land_mask(num_cards: int, freq_path: str) -> np.ndarray:
-    """Return a (num_cards,) float32 vector with 1.0 at land indices, else 0.0.
+def _scatter_multi_hot(idx: tf.Tensor, num_cards: int) -> tf.Tensor:
+    """Padded int32 (B, L) index array → dense float32 (B, num_cards)
+    multi-hot. Padding entries (== num_cards) are dropped. Index arrays are
+    unique per row, so scatter never double-counts."""
+    batch = tf.shape(idx, out_type=tf.int64)[0]
+    coords = tf.where(tf.not_equal(idx, num_cards))
+    rows = coords[:, 0]
+    cards = tf.cast(tf.gather_nd(idx, coords), tf.int64)
+    return tf.scatter_nd(
+        tf.stack([rows, cards], axis=1),
+        tf.ones_like(rows, dtype=tf.float32),
+        (batch, num_cards),
+    )
 
-    Prefers `isLand.json` next to `freq_path` (written by process_data.js). If
-    that file is missing — e.g. data processed before this feature existed —
-    derive the mask on the fly from `raw_data/simpleCardDict.json` +
-    `raw_data/indexToOracleMap.json`. Returns all zeros only as a last resort
-    so the training loss term silently no-ops.
-    """
-    train_dir = os.path.dirname(freq_path)
-    is_land_path = os.path.join(train_dir, "isLand.json")
-    if os.path.exists(is_land_path):
-        return np.array(json.load(open(is_land_path)), dtype=np.float32)
 
-    # Fallback: derive from raw_data — best-effort.
-    raw_index_path = os.path.join("raw_data", "indexToOracleMap.json")
-    raw_dict_path = os.path.join("raw_data", "simpleCardDict.json")
-    if os.path.exists(raw_index_path) and os.path.exists(raw_dict_path):
-        i2o = json.load(open(raw_index_path))
-        cd = json.load(open(raw_dict_path))
-        mask = np.zeros(num_cards, dtype=np.float32)
-        for k, oracle in i2o.items():
-            idx = int(k)
-            if idx >= num_cards:
-                continue
-            t = (cd.get(oracle, {}).get("type") or "")
-            if "Land" in t:
-                mask[idx] = 1.0
-        print(f"[info] isLand.json missing — derived mask from raw_data ({int(mask.sum())} lands).")
-        return mask
+def _densify_pick_targets(
+    pack_idx: tf.Tensor,
+    picked: tf.Tensor,
+    pack_len: tf.Tensor,
+    num_cards: int,
+    label_smoothing: float,
+) -> tf.Tensor:
+    """TF reimplementation of `_make_pick_target`, vectorized over the batch:
+      pack cards get ε/K each (K = raw pack size incl. duplicate copies),
+      the picked card gets +(1−ε); single-card packs collapse to one-hot.
+    Verified equal to the python reference in the pre-launch smokes."""
+    batch = tf.shape(pack_idx, out_type=tf.int64)[0]
+    pack_len_f = tf.cast(pack_len, tf.float32)
+    if label_smoothing > 0.0:
+        smooth_per_row = tf.where(pack_len > 1, label_smoothing / pack_len_f, tf.zeros_like(pack_len_f))
+        picked_add = tf.where(
+            pack_len > 1,
+            tf.fill(tf.shape(pack_len_f), 1.0 - label_smoothing),
+            tf.ones_like(pack_len_f),
+        )
+    else:
+        smooth_per_row = tf.zeros_like(pack_len_f)
+        picked_add = tf.ones_like(pack_len_f)
 
-    print("[warn] no isLand mask available — land penalty will have no effect.")
-    return np.zeros(num_cards, dtype=np.float32)
+    coords = tf.where(tf.not_equal(pack_idx, num_cards))
+    rows = coords[:, 0]
+    cards = tf.cast(tf.gather_nd(pack_idx, coords), tf.int64)
+    target = tf.scatter_nd(
+        tf.stack([rows, cards], axis=1),
+        tf.gather(smooth_per_row, rows),
+        (batch, num_cards),
+    )
+    pick_rows = tf.range(batch)
+    target += tf.scatter_nd(
+        tf.stack([pick_rows, tf.cast(picked, tf.int64)], axis=1),
+        picked_add,
+        (batch, num_cards),
+    )
+    return target
 
 
 def build_dataset(
     cubes_path: str,
     decks_path: str,
     picks_path: str,
-    cube_instances_path: str,
     freq_path: str,
     correlations_path: str,
     batch_size: int,
@@ -302,25 +365,22 @@ def build_dataset(
     primary: Literal["cube", "deck", "pick", "card"],
     noise: float = 0.20,
     noise_std: float = 0.1,
-    use_cube_context: bool = True,
+    respect_target_epochs: bool = False,
+    pick_label_smoothing: float = 0.0,
+    pack_weighting: bool = True,
+    pack_weight_power: float = 0.5,
+    interleave_files: int = 16,
 ):
-    """Creates and returns all information needed to train the model."""
+    """Build the training tf.data.Dataset."""
     card_freqs = json.load(open(freq_path))
     num_cards = len(card_freqs)
-    # rare_sampler ∝ 1/freq — pick rare cards (used by _noise_cube_context, and by
-    # _augment_cube when choosing which real cube cards to *cut* from x_cube so the
-    # model learns to add rare/synergistic cards).
+    # rare_sampler ∝ 1/freq — for cube augmentation (cut popular, add rare)
     rare_sampler = np.array([1.0 / (f + 1) for f in card_freqs], dtype=np.float32)
-    # pop_sampler ∝ freq — pick popular cards (used by _augment_cube when choosing
-    # fake cards to *add* to x_cube so the model learns to remove popular cards).
     pop_sampler = np.array([f + 1.0 for f in card_freqs], dtype=np.float32)
-    # _noise_cube_context still wants the original rare-weighted distribution
-    neg_sampler = rare_sampler
 
     corr_raw = np.array(json.load(open(correlations_path)), dtype=np.float32)
     y_corr = corr_raw.reshape((num_cards, num_cards))
     y_corr /= y_corr.sum(axis=1, keepdims=True) + 1.0
-    x_corr = np.eye(num_cards, dtype=np.float32)
 
     cube_files = [os.path.join(cubes_path, f) for f in os.listdir(cubes_path)]
     deck_files = [os.path.join(decks_path, f) for f in os.listdir(decks_path)]
@@ -330,81 +390,274 @@ def build_dataset(
         cube=_count_records(cube_files),
         deck=_count_records(deck_files),
         pick=_count_records(pick_files),
-        card=len(json.load(open(freq_path))),
+        card=num_cards,
     )
 
     steps_per_epoch = math.ceil(counts[primary] / batch_size)
 
-    # epochs needed so that EVERY dataset is covered at least once
     min_epochs = max(math.ceil(c / (steps_per_epoch * batch_size)) for c in counts.values())
 
-    epochs = max(target_epochs, min_epochs)
-    if epochs > target_epochs:
-        print(f"[info] Asked for {target_epochs} epochs but {epochs} needed to see every dataset once.")
+    if respect_target_epochs:
+        epochs = target_epochs
+        if target_epochs < min_epochs:
+            print(
+                f"[quick] Using {target_epochs} epochs as requested; the largest stream "
+                f"would normally need {min_epochs} epochs to be seen once."
+            )
+    else:
+        epochs = max(target_epochs, min_epochs)
+        if epochs > target_epochs:
+            print(f"[info] Asked for {target_epochs} epochs but {epochs} needed to see every dataset once.")
 
     print(f"Calculated epoch size: {steps_per_epoch} steps with batch_size = {batch_size}")
     print("Total examples in each dataset:")
     for k, v in counts.items():
         print(f"{k}: {humanize_number(v)}")
 
+    idx_spec = tf.TensorSpec((None,), tf.int32)
+    pad_id = tf.constant(num_cards, tf.int32)
+
     cube_ds_raw = tf.data.Dataset.from_generator(
         lambda: _cube_stream(cube_files, num_cards, pop_sampler, rare_sampler, noise, noise_std),
-        output_signature=(
-            tf.TensorSpec((num_cards,), tf.float32),
-            tf.TensorSpec((num_cards,), tf.float32),
-        ),
+        output_signature=(idx_spec, idx_spec),  # x_cube_idx, y_cube_idx
     )
 
     deck_ds_raw = tf.data.Dataset.from_generator(
-        lambda: _deck_stream(deck_files, num_cards, neg_sampler, use_cube_context),
-        output_signature=(
-            (
-                tf.TensorSpec((num_cards,), tf.float32),  # pool
-                tf.TensorSpec((num_cards,), tf.float32),  # cube_context (zeros when off)
-            ),
-            tf.TensorSpec((num_cards,), tf.float32),      # mainboard
-        ),
+        lambda: _deck_stream(deck_files, num_cards),
+        output_signature=(idx_spec, idx_spec),  # pool_idx, mainboard_idx
     )
 
     pick_ds_raw = tf.data.Dataset.from_generator(
-        lambda: _pick_stream(pick_files, cube_instances_path, num_cards, neg_sampler, use_cube_context),
+        lambda: _pick_stream(
+            pick_files, weighting=pack_weighting, weight_power=pack_weight_power, interleave_files=interleave_files
+        ),
         output_signature=(
-            (
-                tf.TensorSpec((num_cards,), tf.float32),  # pool
-                tf.TensorSpec((num_cards,), tf.float32),  # pack
-                tf.TensorSpec((num_cards,), tf.float32),  # cube_context (zeros when off)
-            ),
-            tf.TensorSpec((num_cards,), tf.float32),      # pick
+            idx_spec,  # pool_idx
+            idx_spec,  # pack_idx (unique)
+            tf.TensorSpec((), tf.int32),  # picked card idx
+            tf.TensorSpec((), tf.int32),  # raw pack size
+            tf.TensorSpec((), tf.float32),  # sample weight
         ),
     )
 
     corr_ds_raw = tf.data.Dataset.from_generator(
-        lambda: _corr_stream(x_corr, y_corr),
+        lambda: _corr_stream(y_corr),
         output_signature=(
-            tf.TensorSpec((num_cards,), tf.float32),
-            tf.TensorSpec((num_cards,), tf.float32),
+            tf.TensorSpec((1,), tf.int32),  # single card idx
+            tf.TensorSpec((num_cards,), tf.float32),  # dense target row
         ),
     )
 
-    cube_ds = _prepare_stream(cube_ds_raw, counts["cube"], batch_size, steps_per_epoch, epochs)
-    deck_ds = _prepare_stream(deck_ds_raw, counts["deck"], batch_size, steps_per_epoch, epochs)
-    pick_ds = _prepare_stream(pick_ds_raw, counts["pick"], batch_size, steps_per_epoch, epochs)
-    corr_ds = _prepare_stream(corr_ds_raw, counts["card"], batch_size, steps_per_epoch, epochs)
+    cube_ds = _prepare_stream(
+        cube_ds_raw, counts["cube"], batch_size, steps_per_epoch, epochs, padding_values=(pad_id, pad_id)
+    )
+    deck_ds = _prepare_stream(
+        deck_ds_raw, counts["deck"], batch_size, steps_per_epoch, epochs, padding_values=(pad_id, pad_id)
+    )
+    pick_ds = _prepare_stream(
+        pick_ds_raw,
+        counts["pick"],
+        batch_size,
+        steps_per_epoch,
+        epochs,
+        padding_values=(
+            pad_id,
+            pad_id,
+            tf.constant(0, tf.int32),
+            tf.constant(0, tf.int32),
+            tf.constant(0.0, tf.float32),
+        ),
+    )
+    # Corr is permuted at the source and its dense target rows are large —
+    # skip the shuffle buffer entirely.
+    corr_ds = _prepare_stream(
+        corr_ds_raw,
+        counts["card"],
+        batch_size,
+        steps_per_epoch,
+        epochs,
+        padding_values=(pad_id, tf.constant(0.0, tf.float32)),
+        shuffle=False,
+    )
 
     def _merge(cube, deck, pick, corr):
-        x_cube, y_cube = cube
-        (x_deck_pool, x_deck_cube_ctx), y_deck = deck
-        (pool, pack, cube_ctx), y_pick = pick
-        x_corr, y_corr = corr
+        x_cube_idx, y_cube_idx = cube
+        deck_pool_idx, y_deck_idx = deck
+        pool_idx, pack_idx, picked, pack_len, w_pick = pick
+        corr_idx, y_corr_ = corr
+        pack_mask = _scatter_multi_hot(pack_idx, num_cards)
+        y_cube = _scatter_multi_hot(y_cube_idx, num_cards)
+        y_deck = _scatter_multi_hot(y_deck_idx, num_cards)
+        y_pick = _densify_pick_targets(pack_idx, picked, pack_len, num_cards, pick_label_smoothing)
+        ones = tf.ones_like(w_pick)
         return (
-            (x_cube, (x_deck_pool, x_deck_cube_ctx), (pool, pack, cube_ctx), x_corr),
-            (y_cube, y_deck, y_pick, y_corr),
+            (x_cube_idx, deck_pool_idx, (pool_idx, pack_mask), corr_idx),
+            (y_cube, y_deck, y_pick, y_corr_),
+            (ones, ones, w_pick, ones),
         )
 
     dataset = tf.data.Dataset.zip((cube_ds, deck_ds, pick_ds, corr_ds))
     dataset = dataset.map(_merge, num_parallel_calls=tf.data.AUTOTUNE)
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
 
-    is_land_mask = _load_is_land_mask(num_cards, freq_path)
+    return dataset, counts["card"], steps_per_epoch, epochs
 
-    return dataset, counts["card"], steps_per_epoch, epochs, is_land_mask
+
+def _val_pick_records(
+    pick_files: list[str],
+) -> Iterator[tuple[np.ndarray, np.ndarray, np.int32, np.int32]]:
+    """Yield all val picks in deterministic order:
+    (pool_idx, pack_idx, picked, pack_len_raw). The smoothed target is built
+    post-batch by `_densify_pick_targets` with the same `label_smoothing` as
+    training, so train/val loss values stay directly comparable. No sample
+    weights — val is an unweighted measurement.
+    """
+    for fname in sorted(pick_files):
+        for rec in json.load(open(fname)):
+            yield (_idx(rec["pool"]), _idx(rec["pack"]), np.int32(rec["pick"]), np.int32(len(rec["pack"])))
+
+
+def _val_deck_records(files: list[str]):
+    """Yield val decks in deterministic order: (pool_idx, mainboard_idx)."""
+    for fname in sorted(files):
+        for rec in json.load(open(fname)):
+            main = _idx(rec["mainboard"])
+            pool = np.union1d(main, _idx(rec["sideboard"])).astype(np.int32)
+            yield pool, main
+
+
+def _val_cube_records(files: list[str]):
+    """Yield val cubes in deterministic order. NO augmentation — x = y.
+
+    Validation cube task is essentially "identity" without noise; the val
+    cube_bce loss isn't a deployment metric (val_bomb_agreement is), so we
+    keep this trivial for stability and speed.
+    """
+    for fname in sorted(files):
+        for indices in json.load(open(fname)):
+            idx = _idx(indices)
+            yield idx, idx
+
+
+def build_validation_dataset(
+    cubes_path: str,
+    decks_path: str,
+    picks_path: str,
+    train_freq_path: str,
+    train_correlations_path: str,
+    batch_size: int,
+    pick_label_smoothing: float = 0.0,
+):
+    """Build a deterministic, fully-cached validation dataset.
+
+    The new process_data.js produces a small (≤100k picks), stable val set
+    that fits in memory. We evaluate the FULL val set every epoch with no
+    shuffling or augmentation — so val metrics reflect actual model changes,
+    not data-sampling noise.
+
+    Returns (val_ds, val_steps_per_epoch, val_counts). Returns (None, 0, {})
+    if any test split directory is empty.
+    """
+    if not (
+        os.path.isdir(cubes_path)
+        and os.listdir(cubes_path)
+        and os.path.isdir(decks_path)
+        and os.listdir(decks_path)
+        and os.path.isdir(picks_path)
+        and os.listdir(picks_path)
+    ):
+        return None, 0, {}
+
+    card_freqs = json.load(open(train_freq_path))
+    num_cards = len(card_freqs)
+
+    corr_raw = np.array(json.load(open(train_correlations_path)), dtype=np.float32)
+    y_corr = corr_raw.reshape((num_cards, num_cards))
+    y_corr /= y_corr.sum(axis=1, keepdims=True) + 1.0
+
+    cube_files = [os.path.join(cubes_path, f) for f in os.listdir(cubes_path)]
+    deck_files = [os.path.join(decks_path, f) for f in os.listdir(decks_path)]
+    pick_files = [os.path.join(picks_path, f) for f in os.listdir(picks_path)]
+
+    val_counts = dict(
+        cube=_count_records(cube_files),
+        deck=_count_records(deck_files),
+        pick=_count_records(pick_files),
+        card=num_cards,
+    )
+
+    # Pick stream drives val_steps_per_epoch — it's the main signal we care
+    # about (bomb_agreement is on the pick head). Others are repeated/cycled
+    # to match the pick volume.
+    pick_count = val_counts["pick"]
+    val_steps_per_epoch = max(1, math.ceil(pick_count / batch_size))
+
+    print(f"Validation: full pass over {pick_count} picks ({val_steps_per_epoch} steps at batch_size={batch_size})")
+    print("Held-out examples per stream:")
+    for k, v in val_counts.items():
+        print(f"  {k}: {humanize_number(v)}")
+
+    # Build deterministic streams (NO shuffling, NO augmentation, NO noise).
+    idx_spec = tf.TensorSpec((None,), tf.int32)
+    pad_id = tf.constant(num_cards, tf.int32)
+
+    cube_ds_raw = tf.data.Dataset.from_generator(
+        lambda: _val_cube_records(cube_files),
+        output_signature=(idx_spec, idx_spec),
+    )
+    deck_ds_raw = tf.data.Dataset.from_generator(
+        lambda: _val_deck_records(deck_files),
+        output_signature=(idx_spec, idx_spec),
+    )
+    pick_ds_raw = tf.data.Dataset.from_generator(
+        lambda: _val_pick_records(pick_files),
+        output_signature=(
+            idx_spec,  # pool_idx
+            idx_spec,  # pack_idx (unique)
+            tf.TensorSpec((), tf.int32),  # picked card idx
+            tf.TensorSpec((), tf.int32),  # raw pack size
+        ),
+    )
+    corr_ds_raw = tf.data.Dataset.from_generator(
+        lambda: _corr_stream(y_corr),
+        output_signature=(
+            tf.TensorSpec((1,), tf.int32),
+            tf.TensorSpec((num_cards,), tf.float32),
+        ),
+    )
+
+    # Each non-pick stream is .repeat()'d so val_steps_per_epoch batches can
+    # be drawn from each. The pick stream determines coverage; others cycle.
+    def _val_prepare(ds, padding_values):
+        return (
+            ds.repeat()
+            .padded_batch(batch_size, padding_values=padding_values, drop_remainder=True)
+            .prefetch(tf.data.AUTOTUNE)
+        )
+
+    cube_ds = _val_prepare(cube_ds_raw, (pad_id, pad_id))
+    deck_ds = _val_prepare(deck_ds_raw, (pad_id, pad_id))
+    pick_ds = _val_prepare(pick_ds_raw, (pad_id, pad_id, tf.constant(0, tf.int32), tf.constant(0, tf.int32)))
+    corr_ds = _val_prepare(corr_ds_raw, (pad_id, tf.constant(0.0, tf.float32)))
+
+    def _merge(cube, deck, pick, corr):
+        x_cube_idx, y_cube_idx = cube
+        deck_pool_idx, y_deck_idx = deck
+        pool_idx, pack_idx, picked, pack_len = pick
+        corr_idx, y_corr_ = corr
+        pack_mask = _scatter_multi_hot(pack_idx, num_cards)
+        y_cube = _scatter_multi_hot(y_cube_idx, num_cards)
+        y_deck = _scatter_multi_hot(y_deck_idx, num_cards)
+        y_pick = _densify_pick_targets(pack_idx, picked, pack_len, num_cards, pick_label_smoothing)
+        return (
+            (x_cube_idx, deck_pool_idx, (pool_idx, pack_mask), corr_idx),
+            (y_cube, y_deck, y_pick, y_corr_),
+        )
+
+    val_ds = tf.data.Dataset.zip((cube_ds, deck_ds, pick_ds, corr_ds))
+    val_ds = val_ds.map(_merge, num_parallel_calls=tf.data.AUTOTUNE)
+    # NO .cache(): the densified targets are still ~hundreds of MB per batch
+    # at large batch sizes; caching the full val pass OOM-killed runs before.
+    # Re-reading + re-densifying each epoch costs a few minutes but is safe.
+    val_ds = val_ds.take(val_steps_per_epoch).prefetch(tf.data.AUTOTUNE)
+    return val_ds, val_steps_per_epoch, val_counts
