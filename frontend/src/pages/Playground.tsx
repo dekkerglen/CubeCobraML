@@ -1,13 +1,8 @@
 /** Custom-query playground for the draft head.
  *
- * Build an arbitrary (Pack, Pool, Context) tuple and run the model on it.
- * Context A is required; Context B is optional and enables side-by-side
- * comparison of two contexts. Combined with header compare-mode, the page
- * renders up to a 2×2 grid: (ckpt A | ckpt B) × (context A | context B).
- *
- * Use case: "if I have Splinter Twin in my context, does the model raise
- * Pestermite's pick rate?" Set both contexts the same except for one card,
- * then read the ranked list deltas.
+ * Build an arbitrary (Pack, Pool) pair by hand and run the model on it.
+ * With header compare-mode on, renders the prediction side-by-side across
+ * the selected checkpoints.
  */
 import { useMutation } from "@tanstack/react-query";
 import { Play, X } from "lucide-react";
@@ -16,10 +11,9 @@ import { useSearchParams } from "react-router-dom";
 
 import { CardImage } from "@/components/CardImage";
 import { CardMultiPicker } from "@/components/CardMultiPicker";
-import { CubeSearchPicker } from "@/components/CubeSearchPicker";
 import { RankedPickList, type RankedPick } from "@/components/RankedPickList";
 import { useModelSelection } from "@/hooks/useModelSelection";
-import { apiCubeByUuid, apiPredictDraft } from "@/lib/api";
+import { apiPredictDraft } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import type { DraftPrediction } from "@/lib/types";
 
@@ -82,16 +76,11 @@ export function PlaygroundPage() {
   const initial = {
     pack: parseIdxList(params.get("pack")),
     pool: parseIdxList(params.get("pool")),
-    ctxA: parseIdxList(params.get("ctxA")),
-    ctxB: parseIdxList(params.get("ctxB")),
     autoRun: params.get("run") === "1",
   };
 
   const [pack, setPack] = useState<number[]>(initial.pack);
   const [pool, setPool] = useState<number[]>(initial.pool);
-  const [contextA, setContextA] = useState<number[]>(initial.ctxA);
-  const [contextB, setContextB] = useState<number[]>(initial.ctxB);
-  const [enableB, setEnableB] = useState(initial.ctxB.length > 0);
   // Bumping runKey kicks each cell mutation in PredictionCell.
   const [runKey, setRunKey] = useState(0);
   const { activeKeys } = useModelSelection();
@@ -111,8 +100,8 @@ export function PlaygroundPage() {
       <header className="border-b border-border pb-4">
         <h1 className="text-2xl font-bold text-fg-0">Playground</h1>
         <p className="text-fg-2 text-sm mt-1">
-          Build a pack, pool, and context vector by hand. Compare how the
-          model's pick changes with the context or with the checkpoint.
+          Build a pack and pool by hand and run the model on it. Compare how
+          the pick changes across checkpoints.
         </p>
       </header>
 
@@ -134,23 +123,6 @@ export function PlaygroundPage() {
           <CardMultiPicker value={pool} onChange={setPool} placeholder="add to pool…" />
           <RemovableCardGrid cards={pool} onChange={setPool} />
         </InputBox>
-
-        <ContextBox title={`Context A (${contextA.length})`} cards={contextA} setCards={setContextA} />
-
-        <div>
-          {enableB ? (
-            <ContextBox title={`Context B (${contextB.length})`} cards={contextB} setCards={setContextB}
-              onRemove={() => { setEnableB(false); setContextB([]); }} />
-          ) : (
-            <button
-              type="button"
-              onClick={() => setEnableB(true)}
-              className="w-full h-full min-h-[200px] rounded-lg border border-dashed border-border text-fg-3 hover:border-accent hover:text-accent"
-            >
-              + Add Context B (compare two contexts)
-            </button>
-          )}
-        </div>
       </div>
 
       <div className="flex items-center gap-3">
@@ -175,14 +147,7 @@ export function PlaygroundPage() {
       </div>
 
       {runKey > 0 && (
-        <ResultsGrid
-          runKey={runKey}
-          ckpts={activeKeys}
-          contexts={enableB ? [{ label: "A", cards: contextA }, { label: "B", cards: contextB }]
-                            : [{ label: "A", cards: contextA }]}
-          pack={pack}
-          pool={pool}
-        />
+        <ResultsGrid runKey={runKey} ckpts={activeKeys} pack={pack} pool={pool} />
       )}
     </div>
   );
@@ -212,94 +177,28 @@ function InputBox({
 }
 
 
-function ContextBox({
-  title, cards, setCards, onRemove,
-}: {
-  title: string;
-  cards: number[];
-  setCards: (v: number[]) => void;
-  onRemove?: () => void;
-}) {
-  return (
-    <section className="rounded-lg border border-border bg-bg-1 p-4 space-y-3">
-      <header className="flex items-center justify-between gap-2 flex-wrap">
-        <div>
-          <h2 className="text-sm font-semibold text-fg-0">{title}</h2>
-          <p className="text-fg-3 text-xs mt-0.5">Pick a cube to load its cards, or add cards directly.</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <ClearButton count={cards.length} onClear={() => setCards([])} />
-          {onRemove && (
-            <button type="button" onClick={onRemove} className="text-fg-3 hover:text-bad text-xs">
-              remove
-            </button>
-          )}
-        </div>
-      </header>
-      <CubeSearchPicker
-        placeholder="Load a cube as context…"
-        onPickOverride={async (uuid) => {
-          const cube = await apiCubeByUuid(uuid);
-          setCards(cube.cards);
-        }}
-      />
-      <CardMultiPicker value={cards} onChange={setCards} placeholder="or add cards directly…" />
-      {cards.length > 0 && (
-        <details>
-          <summary className="text-fg-3 text-xs cursor-pointer hover:text-fg-1">
-            preview {cards.length} cards
-          </summary>
-          <div className="mt-2">
-            <RemovableCardGrid
-              cards={cards.slice(0, 24)}
-              onChange={(next) => setCards([...next, ...cards.slice(24)])}
-            />
-          </div>
-        </details>
-      )}
-    </section>
-  );
-}
-
-
 function ResultsGrid({
-  runKey, ckpts, contexts, pack, pool,
+  runKey, ckpts, pack, pool,
 }: {
   runKey: number;
   ckpts: string[];
-  contexts: Array<{ label: string; cards: number[] }>;
   pack: number[];
   pool: number[];
 }) {
   return (
     <div className="space-y-4">
       <h2 className="text-fg-0 font-semibold">Results</h2>
-      <div
-        className={cn(
-          "grid gap-4",
-          contexts.length === 2 ? "grid-cols-1 xl:grid-cols-2" : "grid-cols-1",
-        )}
-      >
-        {contexts.map((ctx) => (
-          <div key={ctx.label} className="space-y-3">
-            <div className="text-xs uppercase tracking-wider font-bold text-fg-3">
-              Context {ctx.label} ({ctx.cards.length} cards)
-            </div>
-            <div className={cn(
-              "grid gap-4",
-              ckpts.length === 2 ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1",
-            )}>
-              {ckpts.map((ckpt) => (
-                <PredictionCell
-                  key={`${ckpt}::${ctx.label}::${runKey}`}
-                  ckpt={ckpt}
-                  pack={pack}
-                  pool={pool}
-                  cubeCtx={ctx.cards}
-                />
-              ))}
-            </div>
-          </div>
+      <div className={cn(
+        "grid gap-4",
+        ckpts.length === 2 ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1",
+      )}>
+        {ckpts.map((ckpt) => (
+          <PredictionCell
+            key={`${ckpt}::${runKey}`}
+            ckpt={ckpt}
+            pack={pack}
+            pool={pool}
+          />
         ))}
       </div>
     </div>
@@ -308,15 +207,14 @@ function ResultsGrid({
 
 
 function PredictionCell({
-  ckpt, pack, pool, cubeCtx,
+  ckpt, pack, pool,
 }: {
   ckpt: string;
   pack: number[];
   pool: number[];
-  cubeCtx: number[];
 }) {
   const mut = useMutation({
-    mutationFn: () => apiPredictDraft({ ckpt, pack, pool, cube_ctx: cubeCtx }),
+    mutationFn: () => apiPredictDraft({ ckpt, pack, pool }),
   });
   // Fire once on mount — parent re-mounts via `key` when runKey bumps.
   useEffect(() => { mut.mutate(); /* eslint-disable-next-line */ }, []);

@@ -300,13 +300,11 @@ export const apiPredictDraft = (body: {
   ckpt: string;
   pool: number[];
   pack: number[];
-  cube_ctx: number[];
 }) => post<DraftPrediction>("/predict/draft", body);
 
 export const apiPredictDeckbuilder = (body: {
   ckpt: string;
   pool: number[];
-  cube_ctx: number[];
   max_spells?: number;
   max_lands?: number;
   seed_count?: number;

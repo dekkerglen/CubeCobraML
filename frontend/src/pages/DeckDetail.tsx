@@ -111,7 +111,6 @@ function DeckDiffContainer({
           <BotPanel
             ckpt={ckpt}
             pool={deck.mainboard}
-            cubeCtx={deck.cube_cards}
             humanMainboard={deck.mainboard}
             onDeck={setBotDeck}
           />
@@ -173,11 +172,10 @@ function HumanPanel({
 
 
 function BotPanel({
-  ckpt, pool, cubeCtx, humanMainboard, onDeck,
+  ckpt, pool, humanMainboard, onDeck,
 }: {
   ckpt: string;
   pool: number[];
-  cubeCtx: number[];
   humanMainboard: number[];
   onDeck: (ckpt: string, cards: number[]) => void;
 }) {
@@ -186,14 +184,14 @@ function BotPanel({
   const start = useStartJob("deckbuilder");
   const [jobId, setJobId] = useState<string | null>(null);
   const lastKey = useRef<string | null>(null);
-  const key = `${ckpt}::${pool.join(",")}::${cubeCtx.join(",")}`;
+  const key = `${ckpt}::${pool.join(",")}`;
 
   useEffect(() => {
     if (!ckpt || pool.length === 0 || lastKey.current === key) return;
     lastKey.current = key;
     setJobId(null);
     start.mutate(
-      { ckpt, pool, cube_ctx: cubeCtx },
+      { ckpt, pool },
       { onSuccess: ({ id }) => setJobId(id) },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps

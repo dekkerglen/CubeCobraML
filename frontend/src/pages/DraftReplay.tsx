@@ -146,7 +146,6 @@ function playgroundHref(step: DraftReplayStep): string {
   const qs = new URLSearchParams();
   qs.set("pack", step.pack.join(","));
   if (step.pool.length) qs.set("pool", step.pool.join(","));
-  if (step.cube_ctx.length) qs.set("ctxA", step.cube_ctx.join(","));
   qs.set("run", "1");
   return `/playground?${qs.toString()}`;
 }
