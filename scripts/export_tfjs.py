@@ -65,6 +65,12 @@ tf.config.set_visible_devices([], "GPU")
 import tensorflowjs as tfjs  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
+
+# Register custom Keras classes (e.g. MultiHotEmbedding) so load_model can
+# deserialize checkpoints that contain them.
+sys.path.insert(0, str(REPO))
+import ccml.model  # noqa: F401, E402
+
 DATA_TRAIN = REPO / "data" / "train"
 
 
