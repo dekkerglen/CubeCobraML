@@ -41,6 +41,7 @@ Workarounds baked in:
   - Newer setuptools removed pkg_resources, which tensorflow-hub still uses;
     pinned <81 above.
 """
+
 from __future__ import annotations
 
 import json
@@ -102,6 +103,36 @@ def _convert_keras_to_graph(model: keras.Model, out_dir: Path) -> None:
     shutil.rmtree(saved, ignore_errors=True)
 
 
+class _DenseEncoder(keras.Model):
+    """Encoder that takes a dense multi-hot instead of padded card indices.
+
+    The checkpoint encoder is Sequential[MultiHotEmbedding, Dense, Dense] whose
+    forward expects padded int32 card-index arrays. CubeCobra's draft bot feeds
+    a dense multi-hot, so without this the exported encoder reads each of the
+    vocab-wide values as an index and returns a frozen constant. This runs the
+    embedding's dense_call path then the same Dense stack — identical weights,
+    dense input contract.
+    """
+
+    def __init__(self, embed, dense_layers, **kwargs):
+        super().__init__(**kwargs)
+        self.embed = embed
+        self.dense_layers = dense_layers
+
+    def call(self, x):
+        y = self.embed.dense_call(x)
+        for layer in self.dense_layers:
+            y = layer(y)
+        return y
+
+
+def _to_dense_encoder(m: keras.Model) -> keras.Model:
+    embed, *tail = m.layers
+    dense = _DenseEncoder(embed, tail, name="encoder_dense")
+    dense(keras.ops.zeros((1, embed.vocab)))  # build so weights are concrete
+    return dense
+
+
 def main() -> None:
     ckpt = _resolve_ckpt()
     out_dir = Path(os.environ.get("OUT_DIR", REPO / "tfjs_export"))
@@ -109,9 +140,9 @@ def main() -> None:
     print(f"[out]  {out_dir}")
 
     heads = {
-        "encoder":            ckpt / "encoder"            / "model.keras",
-        "draft_decoder":      ckpt / "draft_decoder"      / "model.keras",
-        "cube_decoder":       ckpt / "cube_decoder"       / "model.keras",
+        "encoder": ckpt / "encoder" / "model.keras",
+        "draft_decoder": ckpt / "draft_decoder" / "model.keras",
+        "cube_decoder": ckpt / "cube_decoder" / "model.keras",
         "deck_build_decoder": ckpt / "deck_build_decoder" / "model.keras",
     }
     missing = [n for n, p in heads.items() if not p.exists()]
@@ -124,7 +155,11 @@ def main() -> None:
     for head, src in heads.items():
         print(f"[convert] {head}")
         m = keras.models.load_model(src)
-        print(f"    in={m.input_shape}  out={m.output_shape}")
+        if head == "encoder":
+            m = _to_dense_encoder(m)
+            print("    [encoder] exporting with a dense multi-hot input signature")
+        else:
+            print(f"    in={m.input_shape}  out={m.output_shape}")
         _convert_keras_to_graph(m, out_dir / head)
 
     # indexToOracleMap.json — CubeCobra's client loads it as
@@ -142,17 +177,22 @@ def main() -> None:
     # old export logic — check out commit 0d90388.
 
     # Manifest so the server (or you) can sanity-check what was exported.
-    (out_dir / "_export_manifest.json").write_text(json.dumps({
-        "ckpt": str(ckpt),
-        "num_oracles": num_oracles,
-        "heads_exported": list(heads),
-        "note": (
-            "On a localhost CubeCobra origin, draftBot.ts auto-detects and "
-            "loads /model/* from http://localhost:8000. v3 heads are all "
-            "prod-shaped (draft 128 in, deck_build 128 in) — no cube context "
-            "anywhere, no client-side ctx threading needed."
-        ),
-    }, indent=2))
+    (out_dir / "_export_manifest.json").write_text(
+        json.dumps(
+            {
+                "ckpt": str(ckpt),
+                "num_oracles": num_oracles,
+                "heads_exported": list(heads),
+                "note": (
+                    "On a localhost CubeCobra origin, draftBot.ts auto-detects and "
+                    "loads /model/* from http://localhost:8000. v3 heads are all "
+                    "prod-shaped (draft 128 in, deck_build 128 in) — no cube context "
+                    "anywhere, no client-side ctx threading needed."
+                ),
+            },
+            indent=2,
+        )
+    )
 
     print(f"\n[done] {out_dir}")
     print("       contents:", sorted(p.name for p in out_dir.iterdir()))
