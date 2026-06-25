@@ -1,10 +1,24 @@
 data
 raw_data
 node_modules
-ccml/__pycache__
+**/__pycache__
 .venv
 .env
 .DS_Store
-/tfjs_model
+.claude/
+/tfjs_model*
 /model
 /model_copy
+/runs
+
+# dashboard-v2: frontend build output
+frontend/dist/
+backend/static/
+
+# dashboard-v2: backend caches
+data/.dashboard_cache/
+tfjs_export/
+
+# analysis script outputs (regenerated on demand, never committed)
+analysis_out/
+scripts/**/*.csv
