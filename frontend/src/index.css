@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  html, body, #root {
+    @apply h-full;
+  }
+  body {
+    @apply bg-bg-2 text-fg-0 font-sans antialiased;
+    margin: 0;
+  }
+  ::selection { background: rgba(8, 119, 21, 0.18); }
+  .nums { font-variant-numeric: tabular-nums; }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0,0,0,0.18) transparent;
+  }
+}
